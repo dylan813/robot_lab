@@ -94,3 +94,51 @@ def command_levels_ang_vel(
             base_velocity_ranges.ang_vel_z = new_ang_vel_z.tolist()
 
     return torch.tensor(base_velocity_ranges.ang_vel_z[1], device=env.device)
+
+
+def terrain_friction_levels(
+    env: ManagerBasedRLEnv,
+    env_ids: Sequence[int],
+    reward_term_name: str = "track_lin_vel_xy_exp",
+    friction_range: Sequence[float] = (0.1, 1.0),
+    step: float = 0.05,
+) -> torch.Tensor:
+    """decrease friction as tracking reward stays high."""
+    if env.common_step_counter == 0:
+        env._terrain_friction_min = torch.tensor(friction_range[0], device=env.device)
+        env._terrain_friction_max = torch.tensor(friction_range[1], device=env.device)
+        env._terrain_friction_curr = env._terrain_friction_max.clone()
+        _set_terrain_friction(env, env._terrain_friction_curr)
+
+    if env.common_step_counter % env.max_episode_length == 0:
+        episode_sums = env.reward_manager._episode_sums[reward_term_name]
+        reward_term_cfg = env.reward_manager.get_term_cfg(reward_term_name)
+        avg_rew = torch.mean(episode_sums[env_ids]) / env.max_episode_length_s
+
+        if avg_rew > 0.8 * reward_term_cfg.weight:
+            env._terrain_friction_curr = torch.clamp(
+                env._terrain_friction_curr - step, min=env._terrain_friction_min
+            )
+            _set_terrain_friction(env, env._terrain_friction_curr)
+
+    return env._terrain_friction_curr
+
+
+def _set_terrain_friction(env: ManagerBasedRLEnv, friction: torch.Tensor | float) -> None:
+    friction_val = float(friction)
+
+    if getattr(env.scene, "terrain", None) is not None and getattr(env.scene.terrain, "physics_material", None):
+        env.scene.terrain.physics_material.static_friction = friction_val
+        env.scene.terrain.physics_material.dynamic_friction = friction_val
+
+    if getattr(env, "sim", None) is not None and getattr(env.sim, "physics_material", None):
+        env.sim.physics_material.static_friction = friction_val
+        env.sim.physics_material.dynamic_friction = friction_val
+
+    terrain_obj = getattr(env.scene.terrain, "object", None)
+    if terrain_obj is not None and hasattr(terrain_obj, "root_physx_view"):
+        root_view = terrain_obj.root_physx_view
+        if hasattr(root_view, "set_dynamics_friction"):
+            root_view.set_dynamics_friction(friction_val)
+        if hasattr(root_view, "set_statics_friction"):
+            root_view.set_statics_friction(friction_val)
