@@ -115,6 +115,16 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     env_cfg.events.push_robot = None
     env_cfg.curriculum.command_levels_lin_vel = None
     env_cfg.curriculum.command_levels_ang_vel = None
+    # disable terrain friction curriculum and set friction to 0.1
+    env_cfg.curriculum.terrain_friction = None
+    if hasattr(env_cfg.scene, "terrain") and hasattr(env_cfg.scene.terrain, "physics_material"):
+        if env_cfg.scene.terrain.physics_material is not None:
+            env_cfg.scene.terrain.physics_material.static_friction = 0.1
+            env_cfg.scene.terrain.physics_material.dynamic_friction = 0.1
+    if hasattr(env_cfg, "sim") and hasattr(env_cfg.sim, "physics_material"):
+        if env_cfg.sim.physics_material is not None:
+            env_cfg.sim.physics_material.static_friction = 0.1
+            env_cfg.sim.physics_material.dynamic_friction = 0.1
 
     if args_cli.keyboard:
         env_cfg.scene.num_envs = 1
@@ -151,6 +161,22 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
 
     # create isaac environment
     env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array" if args_cli.video else None)
+
+    # set friction to 0.1 after environment creation
+    if hasattr(env.unwrapped, "scene") and hasattr(env.unwrapped.scene, "terrain"):
+        terrain = env.unwrapped.scene.terrain
+        if hasattr(terrain, "physics_material") and terrain.physics_material is not None:
+            terrain.physics_material.static_friction = 0.1
+            terrain.physics_material.dynamic_friction = 0.1
+            print(f"[INFO] Set terrain friction to 0.1 (static={terrain.physics_material.static_friction}, dynamic={terrain.physics_material.dynamic_friction})")
+        if hasattr(terrain, "object") and terrain.object is not None:
+            if hasattr(terrain.object, "root_physx_view"):
+                root_view = terrain.object.root_physx_view
+                if hasattr(root_view, "set_dynamics_friction"):
+                    root_view.set_dynamics_friction(0.1)
+                if hasattr(root_view, "set_statics_friction"):
+                    root_view.set_statics_friction(0.1)
+                print("[INFO] Set terrain friction to 0.1 via PhysX view")
 
     # convert to single-agent instance if required by the RL algorithm
     if isinstance(env.unwrapped, DirectMARLEnv):
