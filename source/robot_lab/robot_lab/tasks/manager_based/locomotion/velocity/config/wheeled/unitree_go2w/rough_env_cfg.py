@@ -1,6 +1,7 @@
 # Copyright (c) 2024-2025 Ziqi Fan
 # SPDX-License-Identifier: Apache-2.0
 
+from isaaclab.managers import CurriculumTermCfg as CurrTerm
 from isaaclab.managers import RewardTermCfg as RewTerm
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.utils import configclass
@@ -232,3 +233,23 @@ class UnitreeGo2WRoughEnvCfg(LocomotionVelocityRoughEnvCfg):
         # self.commands.base_velocity.ranges.lin_vel_x = (-1.5, 1.5)
         # self.commands.base_velocity.ranges.lin_vel_y = (-1.0, 1.0)
         # self.commands.base_velocity.ranges.ang_vel_z = (-1.0, 1.0)
+
+
+@configclass
+class UnitreeGo2WRoughFrictionCurriculumEnvCfg(UnitreeGo2WRoughEnvCfg):
+    def __post_init__(self):
+        super().__post_init__()
+
+        #two-stage terrain+friction curriculum
+        self.curriculum.terrain_levels = CurrTerm(
+            func=mdp.terrain_levels_and_friction_two_stage,
+            params={
+                "friction_range": (0.3, 1.0),
+                "friction_step": 0.05,
+                "convergence_delta": 0.05,
+                "convergence_patience": 10,
+            },
+        )
+
+        self.rewards.feet_air_time_variance.params["sensor_cfg"].body_names = [self.foot_link_name]
+        self.disable_zero_weight_rewards()

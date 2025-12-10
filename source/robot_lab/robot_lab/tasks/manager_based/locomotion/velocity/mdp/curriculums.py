@@ -13,6 +13,9 @@ import torch
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
+# reuse base terrain curriculum
+from isaaclab_tasks.manager_based.locomotion.velocity.mdp.curriculums import terrain_levels_vel
+
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
 
@@ -142,3 +145,96 @@ def _set_terrain_friction(env: ManagerBasedRLEnv, friction: torch.Tensor | float
             root_view.set_dynamics_friction(friction_val)
         if hasattr(root_view, "set_statics_friction"):
             root_view.set_statics_friction(friction_val)
+
+
+def terrain_levels_and_friction_two_stage(
+    env: ManagerBasedRLEnv,
+    env_ids: Sequence[int],
+    friction_range: Sequence[float] = (0.1, 1.0),
+    friction_step: float = 0.05,
+    convergence_delta: float = 0.1,
+    convergence_patience: int = 5,
+) -> torch.Tensor:
+    """Two-stage curriculum:
+        Stage 1 (terrain): climb terrain levels until convergence
+        Stage 2 (friction): keep climbing terrain while friction is lowered by `friction_step` at each convergence event until reaching `friction_range[0]`
+    """
+    terrain = env.scene.terrain
+    device = env.device
+    max_level_idx = getattr(terrain, "max_terrain_level", 1) - 1
+
+    if env.common_step_counter == 0:
+        env._tf_phase = "terrain"
+        env._tf_level_streak = 0
+        env._tf_fric_min = torch.tensor(friction_range[0], device=device)
+        env._tf_fric_max = torch.tensor(friction_range[1], device=device)
+        env._tf_fric_curr = env._tf_fric_max.clone()
+        _set_terrain_friction(env, env._tf_fric_curr)
+
+    #clamped, no random reset at max
+    _terrain_levels_vel_clamped(env, env_ids)
+
+    if getattr(terrain, "terrain_levels", None) is not None:
+        mean_level = float(torch.mean(terrain.terrain_levels.float()))
+        log = env.extras.get("log", {})
+        log["Curriculum/terrain_mean_level"] = mean_level
+        log["Curriculum/terrain_max_level"] = float(max_level_idx)
+        log["Curriculum/convergence_delta"] = float(convergence_delta)
+        log["Curriculum/convergence_patience"] = float(convergence_patience)
+        log["Curriculum/friction_step_param"] = float(friction_step)
+        log["Curriculum/friction_min_param"] = float(friction_range[0])
+        log["Curriculum/friction_max_param"] = float(friction_range[1])
+        env.extras["log"] = log
+
+    if env.common_step_counter % env.max_episode_length != 0:
+        return env._tf_fric_curr
+
+    mean_level = float(torch.mean(terrain.terrain_levels.float()))
+
+    #convergence check
+    prev_mean = getattr(env, "_tf_prev_mean_level", mean_level)
+    env._tf_prev_mean_level = mean_level
+    if not hasattr(env, "_tf_converge_streak"):
+        env._tf_converge_streak = 0
+    env._tf_converge_streak = env._tf_converge_streak + 1 if (mean_level - prev_mean) < convergence_delta else 0
+    convergence_hit = env._tf_converge_streak >= convergence_patience
+
+    if env._tf_phase == "terrain":
+        if convergence_hit:
+            env._tf_phase = "friction"
+            env._tf_converge_streak = 0
+            env._tf_fric_curr = env._tf_fric_max.clone()
+            _set_terrain_friction(env, env._tf_fric_curr)
+
+    elif env._tf_phase == "friction":
+        if convergence_hit and env._tf_fric_curr > env._tf_fric_min:
+            env._tf_converge_streak = 0
+            env._tf_fric_curr = torch.clamp(env._tf_fric_curr - friction_step, min=env._tf_fric_min)
+            _set_terrain_friction(env, env._tf_fric_curr)
+
+    log = env.extras.get("log", {})
+    log["Curriculum/friction"] = float(env._tf_fric_curr)
+    env.extras["log"] = log
+    return env._tf_fric_curr
+
+
+def _terrain_levels_vel_clamped(env: ManagerBasedRLEnv, env_ids: Sequence[int]) -> torch.Tensor:
+    """no random reset when max level is reached"""
+    terrain = env.scene.terrain
+    command = env.command_manager.get_command("base_velocity")
+    max_level_idx = getattr(terrain, "max_terrain_level", 1) - 1
+
+    if "max_level_cap" in env.extras:
+        max_level_idx = min(max_level_idx, int(env.extras["max_level_cap"]))
+
+    asset = env.scene["robot"]
+    distance = torch.norm(asset.data.root_pos_w[env_ids, :2] - env.scene.env_origins[env_ids, :2], dim=1)
+    move_up = distance > terrain.cfg.terrain_generator.size[0] / 2
+    move_down = distance < torch.norm(command[env_ids, :2], dim=1) * env.max_episode_length_s * 0.5
+    move_down &= ~move_up
+
+    terrain.terrain_levels[env_ids] = torch.clamp(
+        terrain.terrain_levels[env_ids] + 1 * move_up - 1 * move_down, min=0, max=max_level_idx
+    )
+    terrain.env_origins[env_ids] = terrain.terrain_origins[terrain.terrain_levels[env_ids], terrain.terrain_types[env_ids]]
+    return torch.mean(terrain.terrain_levels.float())
