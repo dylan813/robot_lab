@@ -77,7 +77,11 @@ from isaaclab.utils.assets import retrieve_file_path
 from isaaclab.utils.dict import print_dict
 
 from isaaclab_rl.rsl_rl import RslRlBaseRunnerCfg, RslRlVecEnvWrapper, export_policy_as_jit, export_policy_as_onnx
-from isaaclab_rl.utils.pretrained_checkpoint import get_published_pretrained_checkpoint
+
+try:
+    from isaaclab_rl.utils.pretrained_checkpoint import get_published_pretrained_checkpoint
+except ImportError:
+    get_published_pretrained_checkpoint = None
 
 from isaaclab_tasks.utils import get_checkpoint_path
 from isaaclab_tasks.utils.hydra import hydra_task_config
@@ -115,11 +119,16 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
 
     # disable randomization for play
     env_cfg.observations.policy.enable_corruption = False
-    # remove random pushing
-    env_cfg.events.randomize_apply_external_force_torque = None
-    env_cfg.events.push_robot = None
-    env_cfg.curriculum.command_levels_lin_vel = None
-    env_cfg.curriculum.command_levels_ang_vel = None
+    # guard for configs that lack these attributes
+    if hasattr(env_cfg.events, "randomize_apply_external_force_torque"):
+        env_cfg.events.randomize_apply_external_force_torque = None
+    if hasattr(env_cfg.events, "push_robot"):
+        env_cfg.events.push_robot = None
+    if env_cfg.curriculum is not None:
+        if hasattr(env_cfg.curriculum, "command_levels_lin_vel"):
+            env_cfg.curriculum.command_levels_lin_vel = None
+        if hasattr(env_cfg.curriculum, "command_levels_ang_vel"):
+            env_cfg.curriculum.command_levels_ang_vel = None
 
     if args_cli.keyboard:
         env_cfg.scene.num_envs = 1
