@@ -89,6 +89,7 @@ class SATATorqueAction(ActionTerm):
 
         # Growth state
         self._growth_scale: float = 0.0
+        self._physics_step_counter: int = 0
         self.current_torque_scale: float = self.cfg.initial_torque_scale
         self.rear_torque_scale: float = self.cfg.initial_rear_torque_scale
 
@@ -115,15 +116,25 @@ class SATATorqueAction(ActionTerm):
         return self._growth_scale
 
     def process_actions(self, actions: torch.Tensor):
-        """Process raw actions and update growth state.
+        """Process raw actions.
 
         Called once per environment step before the physics simulation loop.
+        Growth computation is done in apply_actions() to match the original SATA
+        where growth updates every sim substep.
         """
         self._raw_actions[:] = actions
 
-        # Compute Gompertz growth scale from total training steps
-        step = self._env.common_step_counter
-        self._growth_scale = math.exp(-math.exp(-self.cfg.growth_k * (step - self.cfg.growth_x0)))
+    def apply_actions(self):
+        """Apply the SATA torque pipeline and set joint effort targets.
+
+        Called every simulation substep. Growth is computed here to match
+        the original SATA where the step counter increments per sim substep.
+        """
+        # Update physics step counter and growth
+        self._physics_step_counter += 1
+        self._growth_scale = math.exp(
+            -math.exp(-self.cfg.growth_k * (self._physics_step_counter - self.cfg.growth_x0))
+        )
 
         # Store on env for access by reward/observation/event terms
         self._env._sata_growth_scale = self._growth_scale
@@ -160,11 +171,6 @@ class SATATorqueAction(ActionTerm):
         except Exception:
             pass  # Command manager may not be ready during init
 
-    def apply_actions(self):
-        """Apply the SATA torque pipeline and set joint effort targets.
-
-        Called every simulation substep.
-        """
         # Step 1: Scale raw actions
         self.torques_action = self._raw_actions * self.cfg.action_scale
 

@@ -131,12 +131,8 @@ class SATAActionsCfg:
 
     sata_torque = SATATorqueActionCfg(
         asset_name="robot",
-        joint_names=[
-            "FR_hip_joint", "FR_thigh_joint", "FR_calf_joint",
-            "FL_hip_joint", "FL_thigh_joint", "FL_calf_joint",
-            "RR_hip_joint", "RR_thigh_joint", "RR_calf_joint",
-            "RL_hip_joint", "RL_thigh_joint", "RL_calf_joint",
-        ],
+        joint_names=[".*"],
+        preserve_order=False,
         action_scale=5.0,
         activation_process=True,
         activation_ema_alpha=0.6,
@@ -178,7 +174,7 @@ class SATAObservationsCfg:
         )
         base_ang_vel = ObsTerm(
             func=isaaclab_mdp.base_ang_vel,
-            noise=Unoise(n_min=-0.075, n_max=0.075),
+            noise=Unoise(n_min=-0.3, n_max=0.3),
             clip=(-100.0, 100.0),
             scale=0.25,
         )
@@ -198,12 +194,12 @@ class SATAObservationsCfg:
         joint_vel = ObsTerm(
             func=isaaclab_mdp.joint_vel_rel,
             params={"asset_cfg": SceneEntityCfg("robot", joint_names=".*", preserve_order=True)},
-            noise=Unoise(n_min=-0.1125, n_max=0.1125),
+            noise=Unoise(n_min=-2.25, n_max=2.25),
             clip=(-100.0, 100.0),
             scale=0.05,
         )
         velocity_commands = ObsTerm(
-            func=isaaclab_mdp.generated_commands,
+            func=sata_obs.sata_scaled_commands,
             params={"command_name": "base_velocity"},
             clip=(-100.0, 100.0),
             scale=1.0,
@@ -256,7 +252,7 @@ class SATAObservationsCfg:
             scale=0.05,
         )
         velocity_commands = ObsTerm(
-            func=isaaclab_mdp.generated_commands,
+            func=sata_obs.sata_scaled_commands,
             params={"command_name": "base_velocity"},
             clip=(-100.0, 100.0),
             scale=1.0,
@@ -494,7 +490,7 @@ class UnitreeGo2SATARoughEnvCfg(ManagerBasedRLEnvCfg):
     def __post_init__(self):
         """Post initialization."""
         # Simulation settings
-        self.decimation = 1
+        self.decimation = 2
         self.episode_length_s = 10.0
         self.sim.dt = 0.005
         self.sim.render_interval = self.decimation

@@ -140,8 +140,16 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
             omega_z_sensitivity=env_cfg.commands.base_velocity.ranges.ang_vel_z[1],
         )
         controller = Se2Keyboard(config)
+        # detect SATA command scaling ([2.0, 2.0, 0.25]) from the observation config
+        _vel_term = getattr(env_cfg.observations.policy, "velocity_commands", None)
+        _is_sata = _vel_term is not None and getattr(getattr(_vel_term, "func", None), "__name__", "") == "sata_scaled_commands"
+        _cmd_scale = torch.tensor([2.0, 2.0, 0.25]) if _is_sata else None
         env_cfg.observations.policy.velocity_commands = ObsTerm(
-            func=lambda env: torch.tensor(controller.advance(), dtype=torch.float32).unsqueeze(0).to(env.device),
+            func=lambda env, s=_cmd_scale: (
+                torch.tensor(controller.advance(), dtype=torch.float32).unsqueeze(0).to(env.device)
+                if s is None
+                else torch.tensor(controller.advance(), dtype=torch.float32).unsqueeze(0).to(env.device) * s.to(env.device)
+            ),
         )
 
     # specify directory for logging experiments
@@ -169,6 +177,17 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # convert to single-agent instance if required by the RL algorithm
     if isinstance(env.unwrapped, DirectMARLEnv):
         env = multi_agent_to_single_agent(env)
+
+    # fast-forward SATA growth for play (otherwise torques are near zero)
+    try:
+        _sata = env.unwrapped.action_manager.get_term("sata_torque")
+        _sata._physics_step_counter = int(_sata.cfg.growth_x0 + 5.0 / _sata.cfg.growth_k)
+        _sata._growth_scale = 1.0
+        _sata.cfg.action_loss_rate = 0.0
+        _sata.motor_fatigue.zero_()
+        env.unwrapped._sata_growth_scale = 1.0
+    except Exception:
+        pass
 
     # wrap for video recording
     if args_cli.video:

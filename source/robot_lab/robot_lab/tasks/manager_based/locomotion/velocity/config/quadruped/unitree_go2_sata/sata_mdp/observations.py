@@ -19,6 +19,24 @@ def sata_applied_torques(env: ManagerBasedRLEnv) -> torch.Tensor:
     return action_term.processed_actions
 
 
+def sata_scaled_commands(env: ManagerBasedRLEnv, command_name: str) -> torch.Tensor:
+    """Returns velocity commands scaled by [2.0, 2.0, 0.25].
+
+    Matches the original SATA observation scaling:
+    - lin_vel_x * 2.0 (obs_scales.lin_vel)
+    - lin_vel_y * 2.0
+    - ang_vel_z * 0.25 (obs_scales.ang_vel)
+
+    Shape: (num_envs, 3)
+    """
+    cmd = env.command_manager.get_command(command_name)
+    scaled = cmd[:, :3].clone()
+    scaled[:, 0] *= 2.0
+    scaled[:, 1] *= 2.0
+    scaled[:, 2] *= 0.25
+    return scaled
+
+
 def sata_motor_fatigue(env: ManagerBasedRLEnv) -> torch.Tensor:
     """Returns the motor fatigue state from the SATA torque action term.
 
