@@ -181,11 +181,27 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # fast-forward SATA growth for play (otherwise torques are near zero)
     try:
         _sata = env.unwrapped.action_manager.get_term("sata_torque")
+        # Fast-forward Gompertz growth to maturity
         _sata._physics_step_counter = int(_sata.cfg.growth_x0 + 5.0 / _sata.cfg.growth_k)
         _sata._growth_scale = 1.0
-        _sata.cfg.action_loss_rate = 0.0
-        _sata.motor_fatigue.zero_()
         env.unwrapped._sata_growth_scale = 1.0
+        # Pre-set torque scales to max (avoid initial 30% limit)
+        _sata.current_torque_scale = _sata.cfg.max_torque_scale
+        _sata.rear_torque_scale = _sata.cfg.max_rear_torque_scale
+        # Disable training-time randomisation
+        _sata.cfg.action_loss_rate = 0.0
+        _sata._obs_dropout_installed = True  # prevent monkey-patching obs manager
+        # Disable motor fatigue accumulation
+        _sata.cfg.motor_fatigue_enabled = False
+        _sata.motor_fatigue.zero_()
+        # Expand command ranges to full growth values
+        try:
+            _cmd = env.unwrapped.command_manager.get_term("base_velocity")
+            _cmd.cfg.ranges.lin_vel_x = _sata.cfg.vel_x_range
+            _cmd.cfg.ranges.lin_vel_y = _sata.cfg.vel_y_range
+            _cmd.cfg.ranges.ang_vel_z = _sata.cfg.ang_vel_z_range
+        except Exception:
+            pass
     except Exception:
         pass
 
