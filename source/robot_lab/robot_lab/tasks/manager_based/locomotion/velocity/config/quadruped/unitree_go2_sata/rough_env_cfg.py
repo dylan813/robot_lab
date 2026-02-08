@@ -145,6 +145,8 @@ class SATAActionsCfg:
         max_torque_scale=1.0,
         initial_rear_torque_scale=1.0,
         max_rear_torque_scale=1.0,
+        start_freq=100.0,
+        max_freq=200.0,
         action_loss_rate=0.1,
         vel_x_range=(-0.5, 1.5),
         vel_y_range=(-0.5, 0.5),
@@ -304,11 +306,11 @@ class SATAEventCfg:
         },
     )
 
-    randomize_rigid_body_mass_others = EventTerm(
+    randomize_rigid_body_mass_all = EventTerm(
         func=isaaclab_mdp.randomize_rigid_body_mass,
         mode="startup",
         params={
-            "asset_cfg": SceneEntityCfg("robot", body_names="^(?!.*base).*"),
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*"),
             "mass_distribution_params": (-0.0625, 0.3125),
             "operation": "add",
             "recompute_inertia": True,

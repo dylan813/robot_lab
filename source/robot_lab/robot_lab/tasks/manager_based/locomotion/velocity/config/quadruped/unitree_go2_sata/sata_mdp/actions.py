@@ -93,6 +93,13 @@ class SATATorqueAction(ActionTerm):
         self.current_torque_scale: float = self.cfg.initial_torque_scale
         self.rear_torque_scale: float = self.cfg.initial_rear_torque_scale
 
+        # Frequency growth: track substep index within each env step
+        self._substep_idx: int = 0
+
+        # Observation dropout (lazy-installed after obs manager exists)
+        self._prev_policy_obs: torch.Tensor | None = None
+        self._obs_dropout_installed: bool = False
+
         # Identify rear leg joint indices by name
         self._rear_joint_mask = torch.zeros(self._num_joints, dtype=torch.bool, device=self.device)
         for i, name in enumerate(self._joint_names):
@@ -115,6 +122,31 @@ class SATATorqueAction(ActionTerm):
     def growth_scale(self) -> float:
         return self._growth_scale
 
+    def _install_obs_dropout(self):
+        """Wrap observation_manager.compute() to apply per-env observation dropout.
+
+        Matches original SATA (go2_torque.py:300-302) where entire observation
+        vectors are randomly replaced with the previous step's observation.
+        """
+        orig_compute = self._env.observation_manager.compute
+        action_term = self
+
+        def _compute_with_dropout(*args, **kwargs):
+            obs_dict = orig_compute(*args, **kwargs)
+            if action_term.cfg.action_loss_rate > 0 and "policy" in obs_dict:
+                if action_term._prev_policy_obs is not None:
+                    keep_mask = (
+                        torch.rand(action_term.num_envs, device=action_term.device).unsqueeze(1)
+                        > action_term.cfg.action_loss_rate
+                    )
+                    obs_dict["policy"] = torch.where(
+                        keep_mask, obs_dict["policy"], action_term._prev_policy_obs
+                    )
+                action_term._prev_policy_obs = obs_dict["policy"].clone()
+            return obs_dict
+
+        self._env.observation_manager.compute = _compute_with_dropout
+
     def process_actions(self, actions: torch.Tensor):
         """Process raw actions.
 
@@ -122,7 +154,13 @@ class SATATorqueAction(ActionTerm):
         Growth computation is done in apply_actions() to match the original SATA
         where growth updates every sim substep.
         """
+        # Lazy-install observation dropout (obs manager doesn't exist during __init__)
+        if not self._obs_dropout_installed:
+            self._install_obs_dropout()
+            self._obs_dropout_installed = True
+
         self._raw_actions[:] = actions
+        self._substep_idx = 0
 
     def apply_actions(self):
         """Apply the SATA torque pipeline and set joint effort targets.
@@ -130,14 +168,28 @@ class SATATorqueAction(ActionTerm):
         Called every simulation substep. Growth is computed here to match
         the original SATA where the step counter increments per sim substep.
         """
-        # Update physics step counter and growth
+        # Update physics step counter and growth (always, matching original)
         self._physics_step_counter += 1
+        self._substep_idx += 1
         self._growth_scale = math.exp(
             -math.exp(-self.cfg.growth_k * (self._physics_step_counter - self.cfg.growth_x0))
         )
 
         # Store on env for access by reward/observation/event terms
         self._env._sata_growth_scale = self._growth_scale
+
+        # Frequency growth: compute how many substeps should run this env step
+        current_freq = (
+            self._growth_scale * (self.cfg.max_freq - self.cfg.start_freq)
+            + self.cfg.start_freq
+        )
+        sim_dt = self._env.sim.cfg.dt
+        substeps_needed = max(1, round(1.0 / (sim_dt * current_freq)))
+
+        # If past the needed substeps, just re-apply previous torques and return
+        if self._substep_idx > substeps_needed:
+            self._asset.set_joint_effort_target(self._processed_actions, joint_ids=self._joint_ids)
+            return
 
         # Update torque scales based on growth
         self.current_torque_scale = (
@@ -265,6 +317,10 @@ class SATATorqueActionCfg(ActionTermCfg):
     max_torque_scale: float = 1.0
     initial_rear_torque_scale: float = 1.0
     max_rear_torque_scale: float = 1.0
+
+    # Frequency growth
+    start_freq: float = 100.0
+    max_freq: float = 200.0
 
     # Domain randomization
     action_loss_rate: float = 0.1
