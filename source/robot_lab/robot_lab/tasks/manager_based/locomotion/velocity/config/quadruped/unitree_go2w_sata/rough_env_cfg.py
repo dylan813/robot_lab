@@ -37,7 +37,8 @@ from .sata_mdp import events as sata_ev
 
 from robot_lab.assets.unitree import UNITREE_GO2W_SATA_CFG
 
-from isaaclab.terrains.config.rough import ROUGH_TERRAINS_CFG  # isort: skip
+import isaaclab.terrains as terrain_gen  # isort: skip
+from isaaclab.terrains.terrain_generator_cfg import TerrainGeneratorCfg  # isort: skip
 
 # Ordered list of all actuated joints on Go2W (hips, thighs, calves, wheels).
 GO2W_JOINT_NAMES = [
@@ -69,10 +70,36 @@ GO2W_JOINT_NAMES = [
 class SATASceneCfg(InteractiveSceneCfg):
     """Scene configuration for SATA with terrain and sensors."""
 
+    # Custom terrain config matching Isaac Gym SATA settings
+    # terrain_proportions = [0.2, 0.8, 0, 0, 0.0] means:
+    # 20% smooth slope, 80% rough slope, 0% stairs up, 0% stairs down, 0% discrete
     terrain = TerrainImporterCfg(
         prim_path="/World/ground",
         terrain_type="generator",
-        terrain_generator=ROUGH_TERRAINS_CFG,
+        terrain_generator=TerrainGeneratorCfg(
+            size=(8.0, 8.0),
+            border_width=25.0,
+            num_rows=10,
+            num_cols=20,
+            horizontal_scale=0.1,
+            vertical_scale=0.005,
+            slope_threshold=0.75,
+            use_cache=False,
+            sub_terrains={
+                "hf_pyramid_slope": terrain_gen.HfPyramidSlopedTerrainCfg(
+                    proportion=0.2,
+                    slope_range=(0.0, 0.4),
+                    platform_width=2.0,
+                    border_width=0.25,
+                ),
+                "random_rough": terrain_gen.HfRandomUniformTerrainCfg(
+                    proportion=0.8,
+                    noise_range=(0.02, 0.10),
+                    noise_step=0.02,
+                    border_width=0.25,
+                ),
+            },
+        ),
         max_init_terrain_level=1,
         collision_group=-1,
         physics_material=sim_utils.RigidBodyMaterialCfg(
@@ -202,7 +229,7 @@ class SATAObservationsCfg:
         )
         projected_gravity = ObsTerm(
             func=isaaclab_mdp.projected_gravity,
-            noise=Unoise(n_min=-0.3, n_max=0.3),
+            noise=Unoise(n_min=-0.3, n_max=0.3),  # 0.2 * 1.5 noise_level to match Isaac Gym
             clip=(-100.0, 100.0),
             scale=1.0,
         )
@@ -233,7 +260,7 @@ class SATAObservationsCfg:
         )
         motor_fatigue = ObsTerm(
             func=sata_obs.sata_motor_fatigue,
-            noise=Unoise(n_min=-0.075, n_max=0.075),
+            noise=Unoise(n_min=-0.075, n_max=0.075),  # 0.5 * 1.5 / 10 to match Isaac Gym
             clip=(-100.0, 100.0),
             scale=1.0,
         )
@@ -487,6 +514,13 @@ class SATATerminationsCfg:
         params={"asset_cfg": SceneEntityCfg("robot")},
     )
 
+    # Head contact termination matching Isaac Gym SATA
+    # Terminates when Head_upper or Head_lower contacts the ground/obstacles
+    head_contact = DoneTerm(
+        func=isaaclab_mdp.illegal_contact,
+        params={"sensor_cfg": SceneEntityCfg("contact_forces", body_names="Head.*"), "threshold": 1.0},
+    )
+
 
 ##
 # Environment configuration
@@ -511,8 +545,8 @@ class UnitreeGo2WSATARoughEnvCfg(ManagerBasedRLEnvCfg):
 
     def __post_init__(self):
         """Post initialization."""
-        # Simulation settings
-        self.decimation = 2
+        # Simulation settings (matching Isaac Gym SATA)
+        self.decimation = 1  # Changed from 2 to 1 to match Isaac Gym
         self.episode_length_s = 10.0
         self.sim.dt = 0.005
         self.sim.render_interval = self.decimation
