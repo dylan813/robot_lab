@@ -171,9 +171,6 @@ UNITREE_GO2_SATA_CFG = ArticulationCfg(
     },
 )
 """Configuration of Unitree Go2 for SATA torque control.
-
-Uses ImplicitActuatorCfg with zero stiffness/damping for direct torque control.
-Init pose is a low crouch (z=0.10m) matching SATA's training setup.
 """
 
 UNITREE_GO2W_CFG = ArticulationCfg(
@@ -282,9 +279,6 @@ UNITREE_GO2W_SATA_CFG = ArticulationCfg(
     },
 )
 """Configuration of Unitree Go2W for SATA torque control.
-
-Uses a single implicit actuator group with zero stiffness/damping for direct
-torque commands on both leg and wheel joints, pointing to the torque URDF.
 """
 
 UNITREE_B2_CFG = ArticulationCfg(
