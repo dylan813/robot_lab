@@ -234,6 +234,59 @@ UNITREE_GO2W_CFG = ArticulationCfg(
 """Configuration of Unitree Go2W using DC motor.
 """
 
+UNITREE_GO2W_SATA_CFG = ArticulationCfg(
+    spawn=sim_utils.UrdfFileCfg(
+        fix_base=False,
+        merge_fixed_joints=True,
+        replace_cylinders_with_capsules=False,
+        asset_path=f"{ISAACLAB_ASSETS_DATA_DIR}/Robots/unitree/go2w_description/urdf/go2w_torque.urdf",
+        activate_contact_sensors=True,
+        rigid_props=sim_utils.RigidBodyPropertiesCfg(
+            disable_gravity=False,
+            retain_accelerations=False,
+            linear_damping=0.0,
+            angular_damping=0.0,
+            max_linear_velocity=1000.0,
+            max_angular_velocity=1000.0,
+            max_depenetration_velocity=1.0,
+        ),
+        articulation_props=sim_utils.ArticulationRootPropertiesCfg(
+            enabled_self_collisions=False, solver_position_iteration_count=4, solver_velocity_iteration_count=0
+        ),
+        joint_drive=sim_utils.UrdfConverterCfg.JointDriveCfg(
+            gains=sim_utils.UrdfConverterCfg.JointDriveCfg.PDGainsCfg(stiffness=0, damping=0)
+        ),
+    ),
+    init_state=ArticulationCfg.InitialStateCfg(
+        pos=(0.0, 0.0, 0.45),
+        joint_pos={
+            ".*L_hip_joint": 0.0,
+            ".*R_hip_joint": -0.0,
+            "F.*_thigh_joint": 0.8,
+            "R.*_thigh_joint": 0.8,
+            ".*_calf_joint": -1.5,
+            ".*_foot_joint": 0.0,
+        },
+        joint_vel={".*": 0.0},
+    ),
+    soft_joint_pos_limit_factor=0.9,
+    actuators={
+        # Direct torque control for all joints (legs + wheels) with zero stiffness/damping.
+        "all": ImplicitActuatorCfg(
+            joint_names_expr=[".*"],
+            effort_limit=23.5,
+            velocity_limit=30.0,
+            stiffness=0.0,
+            damping=0.0,
+        ),
+    },
+)
+"""Configuration of Unitree Go2W for SATA torque control.
+
+Uses a single implicit actuator group with zero stiffness/damping for direct
+torque commands on both leg and wheel joints, pointing to the torque URDF.
+"""
+
 UNITREE_B2_CFG = ArticulationCfg(
     spawn=sim_utils.UrdfFileCfg(
         fix_base=False,
