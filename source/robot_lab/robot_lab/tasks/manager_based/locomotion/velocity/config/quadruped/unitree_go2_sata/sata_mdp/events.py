@@ -21,7 +21,6 @@ def sata_push_growth_scaled(
     asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
 ):
     """Push robots with velocity scaled by the Gompertz growth scale.
-
     At early training (growth~0), pushes are very weak.
     At late training (growth~1), pushes reach max velocity.
     """
@@ -31,7 +30,7 @@ def sata_push_growth_scaled(
     max_vel = max_push_vel_xy * growth
     max_ang = max_push_vel_ang * growth
 
-    # Generate random push velocities (only for env_ids)
+    # Generate random push velocities
     velocities = asset.data.root_vel_w[env_ids].clone()
     # Linear velocity push (x, y, z)
     velocities[:, 0:3] = torch.empty(len(env_ids), 3, device=env.device).uniform_(-max_vel, max_vel)
@@ -45,10 +44,7 @@ def sata_reset_fatigue(
     env: ManagerBasedEnv,
     env_ids: torch.Tensor,
 ):
-    """Reset motor fatigue and activation state on episode reset.
-
-    Initializes fatigue with small random values scaled by growth.
-    """
+    """Reset motor fatigue and activation state on episode reset; scaled by growth."""
     action_term = env.action_manager.get_term("sata_torque")
     action_term.reset(env_ids)
 
@@ -58,14 +54,11 @@ def sata_dof_pos_termination(
     asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
     margin: float = 0.05,
 ) -> torch.Tensor:
-    """Terminate if any joint position exceeds URDF limits plus margin.
-
-    This is stricter than soft limits — uses the hard URDF limits with a small buffer.
-    """
+    """Terminate if any joint position exceeds URDF limits plus margin."""
     asset: Articulation = env.scene[asset_cfg.name]
     joint_pos = asset.data.joint_pos[:, asset_cfg.joint_ids]
 
-    # Hard limits from the URDF (not soft limits)
+    # Hard limits from the URDF
     pos_limits = asset.data.joint_limits[:, asset_cfg.joint_ids]
     lower = pos_limits[:, :, 0] - margin
     upper = pos_limits[:, :, 1] + margin
@@ -78,6 +71,6 @@ def sata_flipped_termination(
     env: ManagerBasedEnv,
     asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
 ) -> torch.Tensor:
-    """Terminate if robot is flipped (gravity z-component in body frame > 0)."""
+    """Terminate if robot is flipped."""
     asset = env.scene[asset_cfg.name]
     return asset.data.projected_gravity_b[:, 2] > 0
