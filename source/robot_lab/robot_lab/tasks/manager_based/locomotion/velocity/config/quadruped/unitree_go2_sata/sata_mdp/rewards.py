@@ -21,11 +21,7 @@ def sata_forward(
     vel_x_range: tuple[float, float],
     asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
 ) -> torch.Tensor:
-    """Growth-aware forward velocity tracking reward.
-
-    At early training (growth~0), the target velocity is the midpoint of vel_x_range.
-    As growth increases to 1, the target transitions to the commanded velocity.
-    """
+    """Forward velocity tracking reward."""
     asset: RigidObject = env.scene[asset_cfg.name]
     growth = getattr(env, "_sata_growth_scale", 0.0)
     cmd = env.command_manager.get_command(command_name)
@@ -42,11 +38,7 @@ def sata_head_height(
     sensor_cfg: SceneEntityCfg,
     asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
 ) -> torch.Tensor:
-    """Head height reward: base height (terrain-relative) plus upright penalty.
-
-    Encourages the robot to stand tall and keep its head upright.
-    The reward grows with the Gompertz growth scale.
-    """
+    """Head height reward: base height (terrain-relative) plus upright penalty (encourages the robot to stand tall and keep its head upright)."""
     asset: RigidObject = env.scene[asset_cfg.name]
     growth = getattr(env, "_sata_growth_scale", 0.0)
 
@@ -76,11 +68,7 @@ def sata_moving_y(
     tracking_sigma: float,
     asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
 ) -> torch.Tensor:
-    """Lateral velocity tracking reward, scaled by growth.
-
-    Only becomes active as the growth scale increases, preventing
-    lateral movement learning before basic locomotion is established.
-    """
+    """Lateral velocity tracking reward."""
     asset: RigidObject = env.scene[asset_cfg.name]
     growth = getattr(env, "_sata_growth_scale", 0.0)
     cmd = env.command_manager.get_command(command_name)
@@ -94,10 +82,7 @@ def sata_moving_yaw(
     tracking_sigma: float,
     asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
 ) -> torch.Tensor:
-    """Yaw angular velocity tracking reward, scaled by growth.
-
-    Only becomes active as the growth scale increases.
-    """
+    """Yaw angular velocity tracking reward."""
     asset: RigidObject = env.scene[asset_cfg.name]
     growth = getattr(env, "_sata_growth_scale", 0.0)
     cmd = env.command_manager.get_command(command_name)
@@ -109,11 +94,7 @@ def sata_soft_dof_pos_limits(
     env: ManagerBasedRLEnv,
     asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
 ) -> torch.Tensor:
-    """Penalize joint positions approaching soft limits.
-
-    Computes the total excess beyond the soft joint position limits
-    (defined by soft_joint_pos_limit_factor=0.9 in the asset config).
-    """
+    """Penalize joint positions approaching soft limits (computes the total excess beyond the soft joint position limits)."""
     asset = env.scene[asset_cfg.name]
     # soft limits are stored on the asset
     soft_lower = asset.data.soft_joint_pos_limits[:, asset_cfg.joint_ids, 0]
@@ -126,10 +107,7 @@ def sata_soft_dof_pos_limits(
 
 
 def sata_motor_fatigue_penalty(env: ManagerBasedRLEnv) -> torch.Tensor:
-    """Penalize high torque output on fatigued motors.
-
-    Returns sum(fatigue * |torque_action|) per environment.
-    """
+    """Penalize high torque output on fatigued motors (returns sum(fatigue * |torque_action|) per environment)."""
     action_term = env.action_manager.get_term("sata_torque")
     return torch.sum(action_term.motor_fatigue * torch.abs(action_term.torques_action), dim=1)
 
