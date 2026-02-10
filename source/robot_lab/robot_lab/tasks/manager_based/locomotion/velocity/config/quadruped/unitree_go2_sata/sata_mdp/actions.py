@@ -21,17 +21,6 @@ if TYPE_CHECKING:
 
 
 class SATATorqueAction(ActionTerm):
-    """SATA torque action term implementing biologically-inspired motor control.
-
-    This action term implements the full SATA torque pipeline:
-    1. Raw action scaling
-    2. Gompertz growth-based torque limit scheduling
-    3. Muscle activation dynamics (tanh saturation + EMA smoothing)
-    4. Activation dropout (simulating sensory/motor loss)
-    5. Hill-type muscle model (velocity-dependent force generation)
-    6. Motor fatigue tracking and decay
-    """
-
     cfg: SATATorqueActionCfg
     _asset: Articulation
 
@@ -96,7 +85,7 @@ class SATATorqueAction(ActionTerm):
         # Frequency growth: track substep index within each env step
         self._substep_idx: int = 0
 
-        # Observation dropout (lazy-installed after obs manager exists)
+        # Observation dropout
         self._prev_policy_obs: torch.Tensor | None = None
         self._obs_dropout_installed: bool = False
 
@@ -123,11 +112,8 @@ class SATATorqueAction(ActionTerm):
         return self._growth_scale
 
     def _install_obs_dropout(self):
-        """Wrap observation_manager.compute() to apply per-env observation dropout.
+        """Wrap observation_manager.compute() to apply per-env observation dropout."""
 
-        Matches original SATA (go2_torque.py:300-302) where entire observation
-        vectors are randomly replaced with the previous step's observation.
-        """
         orig_compute = self._env.observation_manager.compute
         action_term = self
 
@@ -148,13 +134,7 @@ class SATATorqueAction(ActionTerm):
         self._env.observation_manager.compute = _compute_with_dropout
 
     def process_actions(self, actions: torch.Tensor):
-        """Process raw actions.
-
-        Called once per environment step before the physics simulation loop.
-        Growth computation is done in apply_actions() to match the original SATA
-        where growth updates every sim substep.
-        """
-        # Lazy-install observation dropout (obs manager doesn't exist during __init__)
+        # observation dropout
         if not self._obs_dropout_installed:
             self._install_obs_dropout()
             self._obs_dropout_installed = True
@@ -163,12 +143,9 @@ class SATATorqueAction(ActionTerm):
         self._substep_idx = 0
 
     def apply_actions(self):
-        """Apply the SATA torque pipeline and set joint effort targets.
+        """Apply the SATA torque pipeline and set joint effort targets."""
 
-        Called every simulation substep. Growth is computed here to match
-        the original SATA where the step counter increments per sim substep.
-        """
-        # Update physics step counter and growth (always, matching original)
+        # Update physics step counter and growth
         self._physics_step_counter += 1
         self._substep_idx += 1
         self._growth_scale = math.exp(
@@ -223,16 +200,16 @@ class SATATorqueAction(ActionTerm):
         except Exception:
             pass  # Command manager may not be ready during init
 
-        # Step 1: Scale raw actions
+        # Scale raw actions
         self.torques_action = self._raw_actions * self.cfg.action_scale
 
-        # Step 2: Compute growth-scaled torque limits
+        # Compute growth-scaled torque limits
         torque_limits_scaled = self.base_torque_limits * self.current_torque_scale
         torque_limits_scaled = torque_limits_scaled.unsqueeze(0).expand(self.num_envs, -1).clone()
         # Scale rear legs separately
         torque_limits_scaled[:, self._rear_joint_mask] *= self.rear_torque_scale
 
-        # Step 3: Muscle activation dynamics
+        # Muscle activation dynamics
         if self.cfg.activation_process:
             current_activation = torch.tanh(self.torques_action / torque_limits_scaled)
             new_activation = (
@@ -242,14 +219,14 @@ class SATATorqueAction(ActionTerm):
         else:
             new_activation = self.torques_action / torque_limits_scaled
 
-        # Step 4: Activation dropout (action loss)
+        # Activation dropout (action loss)
         if self.cfg.action_loss_rate > 0:
             keep_mask = torch.rand(self.num_envs, device=self.device).unsqueeze(1) > self.cfg.action_loss_rate
             self.activation_sign = torch.where(keep_mask, new_activation, self.activation_sign)
         else:
             self.activation_sign = new_activation
 
-        # Step 5: Hill muscle model (velocity-dependent force)
+        # Hill muscle model (velocity-dependent force)
         if self.cfg.hill_model:
             dof_vel = self._asset.data.joint_vel[:, self._joint_ids]
             vel_limits_expanded = self.vel_limits.unsqueeze(0).expand(self.num_envs, -1)
@@ -259,7 +236,7 @@ class SATATorqueAction(ActionTerm):
         else:
             torques = self.activation_sign * torque_limits_scaled
 
-        # Step 6: Motor fatigue tracking
+        # Motor fatigue tracking
         if self.cfg.motor_fatigue_enabled:
             sim_dt = self._env.sim.cfg.dt
             self.motor_fatigue = self.motor_fatigue + torch.abs(torques) * sim_dt
@@ -267,7 +244,7 @@ class SATATorqueAction(ActionTerm):
         else:
             self.motor_fatigue.zero_()
 
-        # Store processed actions (final torques)
+        # Final torques
         self._processed_actions = torques
 
         # Apply torques to the asset
@@ -325,7 +302,7 @@ class SATATorqueActionCfg(ActionTermCfg):
     # Domain randomization
     action_loss_rate: float = 0.1
 
-    # Command range parameters (for growth-based scaling)
+    # Command range parameters (growth-based scaling)
     vel_x_range: tuple[float, float] = (-0.5, 1.5)
     vel_y_range: tuple[float, float] = (-0.5, 0.5)
     ang_vel_z_range: tuple[float, float] = (-1.5, 1.5)
