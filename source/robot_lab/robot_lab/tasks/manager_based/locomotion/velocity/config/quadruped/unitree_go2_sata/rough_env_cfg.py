@@ -1,7 +1,7 @@
 """SATA (Safe and Adaptive Torque-based Locomotion) environment configuration for Unitree Go2.
 
-This environment implements the SATA framework from Isaac Gym in Isaac Lab's
-manager-based architecture. Key features:
+This environment implements the SATA framework from Isaac Gym in Isaac Lab
+Key features:
 - Gompertz growth curriculum for progressive difficulty
 - Biologically-inspired muscle activation dynamics
 - Hill-type force-velocity muscle model
@@ -37,22 +37,16 @@ from .sata_mdp import events as sata_ev
 
 from robot_lab.assets.unitree import UNITREE_GO2_SATA_CFG
 
-import isaaclab.terrains as terrain_gen  # isort: skip
-from isaaclab.terrains.terrain_generator_cfg import TerrainGeneratorCfg  # isort: skip
+import isaaclab.terrains as terrain_gen
+from isaaclab.terrains.terrain_generator_cfg import TerrainGeneratorCfg
 
 
-##
 # Scene definition
-##
-
-
 @configclass
 class SATASceneCfg(InteractiveSceneCfg):
-    """Scene configuration for SATA with terrain and sensors."""
+    """Scene config for SATA with terrain and sensors."""
 
-    # Custom terrain config matching Isaac Gym SATA settings
-    # terrain_proportions = [0.2, 0.8, 0, 0, 0.0] means:
-    # 20% smooth slope, 80% rough slope, 0% stairs up, 0% stairs down, 0% discrete
+    # terrain_proportions = [0.2, 0.8, 0, 0, 0.0]; 20% smooth slope, 80% rough slope, 0% stairs up, 0% stairs down, 0% discrete
     terrain = TerrainImporterCfg(
         prim_path="/World/ground",
         terrain_type="generator",
@@ -99,10 +93,6 @@ class SATASceneCfg(InteractiveSceneCfg):
 
     robot: ArticulationCfg = MISSING
 
-    # Height scanner matching Isaac Gym SATA configuration
-    # measured_points_x: 17 points from -0.8 to 0.8
-    # measured_points_y: 11 points from -0.5 to 0.5
-    # Total: 17 x 11 = 187 measurement points
     height_scanner = RayCasterCfg(
         prim_path="{ENV_REGEX_NS}/Robot/base",
         offset=RayCasterCfg.OffsetCfg(pos=(0.0, 0.0, 20.0)),
@@ -127,19 +117,10 @@ class SATASceneCfg(InteractiveSceneCfg):
     )
 
 
-##
 # MDP settings
-##
-
-
 @configclass
 class SATACommandsCfg:
-    """Command configuration for SATA.
-
-    Uses direct angular velocity commands (no heading control).
-    Ranges are dynamically updated by the growth curriculum via the action term.
-    """
-
+    """Command config for SATA: direct angular velocity commands (no heading control); ranges dynamically updated by growth curriculum via action term."""
     base_velocity = isaaclab_mdp.UniformVelocityCommandCfg(
         asset_name="robot",
         resampling_time_range=(5.0, 5.0),
@@ -158,7 +139,7 @@ class SATACommandsCfg:
 
 @configclass
 class SATAActionsCfg:
-    """Action configuration for SATA: direct torque control with muscle model."""
+    """Action config for SATA: direct torque control with muscle model."""
 
     sata_torque = SATATorqueActionCfg(
         asset_name="robot",
@@ -187,12 +168,15 @@ class SATAActionsCfg:
 
 @configclass
 class SATAObservationsCfg:
-    """Observation configuration for SATA (60 observations total).
-
-    Order matches the original SATA implementation:
-    base_lin_vel(3) + base_ang_vel(3) + projected_gravity(3) +
-    joint_pos_rel(12) + joint_vel(12) + commands(3) +
-    torques(12) + motor_fatigue(12) = 60
+    """Observation config for SATA (60 observations total)
+    base_lin_vel(3)
+    base_ang_vel(3)
+    projected_gravity(3)
+    joint_pos_rel(12)
+    joint_vel(12)
+    commands(3)
+    torques(12)
+    motor_fatigue(12)
     """
 
     @configclass
@@ -213,7 +197,7 @@ class SATAObservationsCfg:
         )
         projected_gravity = ObsTerm(
             func=isaaclab_mdp.projected_gravity,
-            noise=Unoise(n_min=-0.3, n_max=0.3),  # 0.2 * 1.5 noise_level to match Isaac Gym
+            noise=Unoise(n_min=-0.3, n_max=0.3),
             clip=(-100.0, 100.0),
             scale=1.0,
         )
@@ -244,7 +228,7 @@ class SATAObservationsCfg:
         )
         motor_fatigue = ObsTerm(
             func=sata_obs.sata_motor_fatigue,
-            noise=Unoise(n_min=-0.075, n_max=0.075),  # 0.5 * 1.5 / 10 to match Isaac Gym
+            noise=Unoise(n_min=-0.075, n_max=0.075),
             clip=(-100.0, 100.0),
             scale=1.0,
         )
@@ -311,7 +295,7 @@ class SATAObservationsCfg:
 
 @configclass
 class SATAEventCfg:
-    """Event configuration for SATA domain randomization."""
+    """Event config for SATA domain randomization."""
 
     # Startup events
     randomize_rigid_body_material = EventTerm(
@@ -404,11 +388,7 @@ class SATAEventCfg:
 
 @configclass
 class SATARewardsCfg:
-    """Reward configuration for SATA.
-
-    Reward weights match the original SATA implementation.
-    All rewards are multiplied by step_dt internally by Isaac Lab.
-    """
+    """Reward config for SATA."""
 
     # Positive rewards (tracking)
     forward = RewTerm(
@@ -484,7 +464,7 @@ class SATARewardsCfg:
 
 @configclass
 class SATATerminationsCfg:
-    """Termination configuration for SATA."""
+    """Termination config for SATA."""
 
     time_out = DoneTerm(func=isaaclab_mdp.time_out, time_out=True)
 
@@ -498,22 +478,17 @@ class SATATerminationsCfg:
         params={"asset_cfg": SceneEntityCfg("robot")},
     )
 
-    # Head contact termination matching Isaac Gym SATA
-    # Terminates when Head_upper or Head_lower contacts the ground/obstacles
+    # head contact termination: when Head_upper or Head_lower contacts the ground/obstacles
     head_contact = DoneTerm(
         func=isaaclab_mdp.illegal_contact,
         params={"sensor_cfg": SceneEntityCfg("contact_forces", body_names="Head.*"), "threshold": 1.0},
     )
 
 
-##
-# Environment configuration
-##
-
-
+# Environment
 @configclass
 class UnitreeGo2SATARoughEnvCfg(ManagerBasedRLEnvCfg):
-    """SATA environment configuration for Unitree Go2 on rough terrain."""
+    """SATA environment config for Unitree Go2 on rough terrain."""
 
     # Scene
     scene: SATASceneCfg = SATASceneCfg(num_envs=4096, env_spacing=2.5)
@@ -528,25 +503,24 @@ class UnitreeGo2SATARoughEnvCfg(ManagerBasedRLEnvCfg):
     curriculum = None  # SATA growth handled via action term
 
     def __post_init__(self):
-        """Post initialization."""
-        # Simulation settings (matching Isaac Gym SATA)
-        self.decimation = 1  # Changed from 2 to 1 to match Isaac Gym
+        # simulation settings
+        self.decimation = 1
         self.episode_length_s = 10.0
         self.sim.dt = 0.005
         self.sim.render_interval = self.decimation
         self.sim.physics_material = self.scene.terrain.physics_material
         self.sim.physx.gpu_max_rigid_patch_count = 10 * 2**15
 
-        # Set robot asset
+        # robot asset
         self.scene.robot = UNITREE_GO2_SATA_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
         self.scene.height_scanner.prim_path = "{ENV_REGEX_NS}/Robot/base"
 
-        # Sensor update periods
+        # sensor update periods
         if self.scene.height_scanner is not None:
             self.scene.height_scanner.update_period = self.decimation * self.sim.dt
         if self.scene.contact_forces is not None:
             self.scene.contact_forces.update_period = self.sim.dt
 
-        # Disable terrain curriculum (SATA uses its own growth)
+        # disable terrain curriculum
         if self.scene.terrain.terrain_generator is not None:
             self.scene.terrain.terrain_generator.curriculum = False
