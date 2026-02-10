@@ -12,7 +12,6 @@ if TYPE_CHECKING:
 
 def sata_applied_torques(env: ManagerBasedRLEnv) -> torch.Tensor:
     """Returns the applied torques from the SATA torque action term.
-
     Shape: (num_envs, num_joints)
     """
     action_term = env.action_manager.get_term("sata_torque")
@@ -21,12 +20,9 @@ def sata_applied_torques(env: ManagerBasedRLEnv) -> torch.Tensor:
 
 def sata_scaled_commands(env: ManagerBasedRLEnv, command_name: str) -> torch.Tensor:
     """Returns velocity commands scaled by [2.0, 2.0, 0.25].
-
-    Matches the original SATA observation scaling:
     - lin_vel_x * 2.0 (obs_scales.lin_vel)
     - lin_vel_y * 2.0
     - ang_vel_z * 0.25 (obs_scales.ang_vel)
-
     Shape: (num_envs, 3)
     """
     cmd = env.command_manager.get_command(command_name)
@@ -39,9 +35,7 @@ def sata_scaled_commands(env: ManagerBasedRLEnv, command_name: str) -> torch.Ten
 
 def sata_motor_fatigue(env: ManagerBasedRLEnv) -> torch.Tensor:
     """Returns the motor fatigue state from the SATA torque action term.
-
-    Motor fatigue accumulates based on applied torque magnitude and decays
-    each step. Shape: (num_envs, num_joints)
+    Shape: (num_envs, num_joints)
     """
     action_term = env.action_manager.get_term("sata_torque")
     return action_term.motor_fatigue.detach()
