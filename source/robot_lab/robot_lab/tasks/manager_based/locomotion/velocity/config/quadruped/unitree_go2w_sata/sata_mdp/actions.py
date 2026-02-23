@@ -60,32 +60,14 @@ class SATATorqueAction(ActionTerm):
         self.activation_sign = torch.zeros(self.num_envs, self._num_joints, device=self.device)
         self.motor_fatigue = torch.zeros(self.num_envs, self._num_joints, device=self.device)
 
-        # Torque and velocity limits from actuator config
+        # Torque limits: flat 23.5 for all joints
         self.base_torque_limits = torch.ones(self._num_joints, device=self.device) * 23.5
-        self.vel_limits = torch.ones(self._num_joints, device=self.device) * 30.0
 
-        # Try to read limits from actuator model
-        for actuator in self._asset.actuators.values():
-            if hasattr(actuator, 'effort_limit'):
-                effort = actuator.effort_limit
-                if isinstance(effort, torch.Tensor):
-                    # effort_limit may be 2D [num_envs, num_joints] — take first row
-                    if effort.dim() >= 2:
-                        self.base_torque_limits = effort[0, :self._num_joints].to(self.device)
-                    else:
-                        self.base_torque_limits = effort[:self._num_joints].to(self.device)
-                else:
-                    self.base_torque_limits[:] = float(effort)
-            if hasattr(actuator, 'velocity_limit'):
-                vel = actuator.velocity_limit
-                if isinstance(vel, torch.Tensor):
-                    if vel.dim() >= 2:
-                        self.vel_limits = vel[0, :self._num_joints].to(self.device)
-                    else:
-                        self.vel_limits = vel[:self._num_joints].to(self.device)
-                else:
-                    self.vel_limits[:] = float(vel)
-            break  # Use the first actuator group
+        # Velocity limits: per-joint from URDF (hip/thigh=30.1, calf=20.07, foot=30.1)
+        self.vel_limits = torch.ones(self._num_joints, device=self.device) * 30.1
+        for i, name in enumerate(self._joint_names):
+            if "calf" in name:
+                self.vel_limits[i] = 20.07
 
         # Growth state
         self._growth_scale: float = 0.0
