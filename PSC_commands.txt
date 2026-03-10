@@ -1,0 +1,59 @@
+Open Session to Use GPU(s):
+V100 (no RTX):
+interact -A cis250038p --partition GPU-shared --gres=gpu:v100-32:1 -t 02:00:00
+
+L40S (RTX):
+salloc -J Interact -A cis250038p --partition GPU-shared --gres=gpu:l40s-48:1 --time=8:00:00
+
+Check If a Session is Open:
+squeue -u $USER
+
+Check L40S GPU Availability (AllocTRES shows allocated GPUs out of 8 per node):
+scontrol show node gl001,gl002,gl003 | grep -E "NodeName|AllocTRES|CfgTRES"
+
+Check L40S Jobs and Time Remaining:
+squeue --nodelist=gl001,gl002,gl003 --format="%.18i %.2t %.10M %.10L %R"
+
+
+Setup/Build:
+mkdir -p $PROJECT/containers
+
+apptainer build --fakeroot $PROJECT/containers/isaaclab.sif \
+  $HOME/robot_lab/isaaclab.def
+
+apptainer overlay create --size 2048 $PROJECT/containers/overlay.img
+
+apptainer exec --nv \
+  --overlay $PROJECT/containers/overlay.img \
+  --bind $HOME:$HOME,$PROJECT:$PROJECT \
+  --bind /usr/share/vulkan:/usr/share/vulkan \
+  --bind /usr/lib64/libGLX_nvidia.so.560.35.03:/usr/lib64/libGLX_nvidia.so.0 \
+  --bind /usr/lib64/libEGL_nvidia.so.560.35.03:/usr/lib64/libEGL_nvidia.so.0 \
+  --env VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/nvidia_icd.x86_64.json \
+  $PROJECT/containers/isaaclab.sif \
+  pip install -e $HOME/robot_lab/source/robot_lab
+
+
+Check Available Training Tasks:
+apptainer exec --nv \
+  --overlay $PROJECT/containers/overlay.img \
+  --bind $HOME:$HOME,$PROJECT:$PROJECT \
+  --bind /usr/share/vulkan:/usr/share/vulkan \
+  --bind /usr/lib64/libGLX_nvidia.so.560.35.03:/usr/lib64/libGLX_nvidia.so.0 \
+  --bind /usr/lib64/libEGL_nvidia.so.560.35.03:/usr/lib64/libEGL_nvidia.so.0 \
+  --env VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/nvidia_icd.x86_64.json \
+  $PROJECT/containers/isaaclab.sif \
+  python $HOME/robot_lab/scripts/tools/list_envs.py
+
+
+Run Training Task:
+apptainer exec --nv \
+  --overlay $PROJECT/containers/overlay.img \
+  --bind $HOME:$HOME,$PROJECT:$PROJECT \
+  --bind /usr/share/vulkan:/usr/share/vulkan \
+  --bind /usr/lib64/libGLX_nvidia.so.560.35.03:/usr/lib64/libGLX_nvidia.so.0 \
+  --bind /usr/lib64/libEGL_nvidia.so.560.35.03:/usr/lib64/libEGL_nvidia.so.0 \
+  --env VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/nvidia_icd.x86_64.json \
+  $PROJECT/containers/isaaclab.sif \
+  python $HOME/robot_lab/scripts/reinforcement_learning/rsl_rl/train.py \
+    --task=RobotLab-Isaac-Velocity-Rough-Unitree-Go2W-SATA-v0 --headless
