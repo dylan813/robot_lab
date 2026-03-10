@@ -1,0 +1,41 @@
+Bootstrap: docker
+From: ubuntu:22.04
+
+%environment
+    export PATH=/opt/isaac-venv/bin:$PATH
+    export OMNI_KIT_ACCEPT_EULA=YES
+    export OMNI_KIT_ALLOW_ROOT=1
+    export VIRTUAL_ENV=/opt/isaac-venv
+
+%post
+    export DEBIAN_FRONTEND=noninteractive
+
+    # System packages + Python 3.11
+    apt-get update && apt-get install -y \
+        git curl wget build-essential \
+        libgl1 libglib2.0-0 libgomp1 \
+        libvulkan1 libvulkan-dev vulkan-tools \
+        libxt6 libglu1-mesa \
+        python3.11 python3.11-venv python3.11-dev \
+        && rm -rf /var/lib/apt/lists/*
+
+    # Create virtual environment
+    python3.11 -m venv /opt/isaac-venv
+    /opt/isaac-venv/bin/pip install --upgrade pip
+
+    # Install Isaac Sim
+    /opt/isaac-venv/bin/pip install \
+        isaacsim[all,extscache]==5.1.0.0 \
+        --extra-index-url https://pypi.nvidia.com
+
+    # Clone and install IsaacLab
+    git clone https://github.com/isaac-sim/IsaacLab.git /opt/IsaacLab
+    /opt/isaac-venv/bin/pip install -e /opt/IsaacLab/source/isaaclab
+    /opt/isaac-venv/bin/pip install -e /opt/IsaacLab/source/isaaclab_assets
+    /opt/isaac-venv/bin/pip install -e /opt/IsaacLab/source/isaaclab_mimic
+    /opt/isaac-venv/bin/pip install -e /opt/IsaacLab/source/isaaclab_rl
+    /opt/isaac-venv/bin/pip install -e /opt/IsaacLab/source/isaaclab_tasks
+    /opt/isaac-venv/bin/pip install rsl-rl-lib
+
+%runscript
+    exec /opt/isaac-venv/bin/python "$@"
