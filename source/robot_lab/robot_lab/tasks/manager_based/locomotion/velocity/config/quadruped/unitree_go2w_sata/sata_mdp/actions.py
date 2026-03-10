@@ -88,6 +88,12 @@ class SATATorqueAction(ActionTerm):
             if name.startswith("RL_") or name.startswith("RR_"):
                 self._rear_joint_mask[i] = True
 
+        # Identify wheel joints
+        self._wheel_joint_mask = torch.zeros(self._num_joints, dtype=torch.bool, device=self.device)
+        for i, name in enumerate(self._joint_names):
+            if name.endswith("_foot_joint"):
+                self._wheel_joint_mask[i] = True
+
     @property
     def action_dim(self) -> int:
         return self._num_joints
@@ -231,13 +237,15 @@ class SATATorqueAction(ActionTerm):
         else:
             self.activation_sign = new_activation
 
-        # Step 5: Hill muscle model (velocity-dependent force)
+        # Step 5: Hill muscle model (leg joints only)
         if self.cfg.hill_model:
             dof_vel = self._asset.data.joint_vel[:, self._joint_ids]
             vel_limits_expanded = self.vel_limits.unsqueeze(0).expand(self.num_envs, -1)
-            torques = self.activation_sign * torque_limits_scaled * (
+            hill_torques = self.activation_sign * torque_limits_scaled * (
                 1 - torch.sign(self.activation_sign) * dof_vel / vel_limits_expanded
             )
+            plain_torques = self.activation_sign * torque_limits_scaled
+            torques = torch.where(self._wheel_joint_mask.unsqueeze(0), plain_torques, hill_torques)
         else:
             torques = self.activation_sign * torque_limits_scaled
 
