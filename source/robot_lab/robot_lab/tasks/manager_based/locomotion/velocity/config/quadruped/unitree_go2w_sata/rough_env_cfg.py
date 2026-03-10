@@ -346,8 +346,8 @@ class SATAEventCfg:
         mode="startup",
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=".*"),
-            "mass_distribution_params": (-0.0625, 0.3125),
-            "operation": "add",
+            "mass_distribution_params": (0.8, 1.2),
+            "operation": "scale",
             "recompute_inertia": True,
         },
     )
