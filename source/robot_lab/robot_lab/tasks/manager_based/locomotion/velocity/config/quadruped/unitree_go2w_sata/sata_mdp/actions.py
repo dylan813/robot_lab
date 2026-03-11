@@ -71,6 +71,7 @@ class SATATorqueAction(ActionTerm):
 
         # Growth state
         self._growth_scale: float = 0.0
+        self._wheel_growth_scale: float = 0.0
         self._physics_step_counter: int = 0
         self.current_torque_scale: float = self.cfg.initial_torque_scale
         self.rear_torque_scale: float = self.cfg.initial_rear_torque_scale
@@ -220,15 +221,30 @@ class SATATorqueAction(ActionTerm):
         # Scale rear legs separately
         torque_limits_scaled[:, self._rear_joint_mask] *= self.rear_torque_scale
 
+        # Wheel-specific growth: same Gompertz shape as legs but with a much lower initial scale.
+        # This mirrors the leg formula exactly — wheels are always active but start very weak,
+        # avoiding the distribution shift that a hard threshold would cause.
+        #   wheel_scale = growth * (max_wheel - initial_wheel) + initial_wheel
+        # e.g. initial_wheel=0.05, max_wheel=1.0 → [0.05 … 1.0] vs legs [0.3 … 1.0]
+        self._wheel_growth_scale = (
+            self._growth_scale * (self.cfg.max_wheel_torque_scale - self.cfg.initial_wheel_torque_scale)
+            + self.cfg.initial_wheel_torque_scale
+        )
+        torque_limits_scaled[:, self._wheel_joint_mask] = (
+            self.base_torque_limits[self._wheel_joint_mask] * self._wheel_growth_scale
+        )
+
         # Step 3: Muscle activation dynamics
+        # Clamp denominator so locked wheels (scale=0) don't produce NaN activations.
+        safe_limits = torque_limits_scaled.clamp(min=1e-6)
         if self.cfg.activation_process:
-            current_activation = torch.tanh(self.torques_action / torque_limits_scaled)
+            current_activation = torch.tanh(self.torques_action / safe_limits)
             new_activation = (
                 (current_activation - self.activation_sign) * self.cfg.activation_ema_alpha
                 + self.activation_sign
             )
         else:
-            new_activation = self.torques_action / torque_limits_scaled
+            new_activation = self.torques_action / safe_limits
 
         # Step 4: Activation dropout (action loss)
         if self.cfg.action_loss_rate > 0:
@@ -252,8 +268,9 @@ class SATATorqueAction(ActionTerm):
         # Step 6: Motor fatigue tracking
         if self.cfg.motor_fatigue_enabled:
             sim_dt = self._env.sim.cfg.dt
-            self.motor_fatigue = self.motor_fatigue + torch.abs(torques) * sim_dt
-            self.motor_fatigue = self.motor_fatigue * self.cfg.fatigue_decay
+            fatigue_increment = torch.abs(torques) * sim_dt
+            fatigue_increment[:, self._wheel_joint_mask] = 0.0
+            self.motor_fatigue = (self.motor_fatigue + fatigue_increment) * self.cfg.fatigue_decay
         else:
             self.motor_fatigue.zero_()
 
@@ -271,9 +288,10 @@ class SATATorqueAction(ActionTerm):
         self._raw_actions[env_ids] = 0.0
         self.activation_sign[env_ids] = 0.0
 
-        # Reset fatigue with small random initial values scaled by growth
+        # Reset fatigue with small random initial values scaled by growth (leg joints only)
         if self.cfg.motor_fatigue_enabled and self._growth_scale > 0:
             self.motor_fatigue[env_ids] = torch.rand_like(self.motor_fatigue[env_ids]) * 0.2 * self._growth_scale
+            self.motor_fatigue[env_ids][:, self._wheel_joint_mask] = 0.0
         else:
             self.motor_fatigue[env_ids] = 0.0
 
@@ -307,6 +325,12 @@ class SATATorqueActionCfg(ActionTermCfg):
     max_torque_scale: float = 1.0
     initial_rear_torque_scale: float = 1.0
     max_rear_torque_scale: float = 1.0
+
+    # Wheel-specific growth schedule: same Gompertz shape as legs.
+    # initial_wheel_torque_scale << initial_torque_scale ensures wheels start much
+    # weaker than legs so the policy learns postural stability before wheel drive.
+    initial_wheel_torque_scale: float = 0.05
+    max_wheel_torque_scale: float = 1.0
 
     # Frequency growth
     start_freq: float = 100.0

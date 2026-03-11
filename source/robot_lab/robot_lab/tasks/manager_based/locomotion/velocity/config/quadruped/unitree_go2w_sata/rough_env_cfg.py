@@ -196,7 +196,7 @@ class SATAObservationsCfg:
     joint_vel(16)
     commands(3)
     torques(16)
-    motor_fatigue(16)
+    motor_fatigue(16): leg joints = fatigue, wheel joints = normalized instantaneous power |T*omega|/(T_max*omega_max)
     """
 
     @configclass
@@ -464,10 +464,22 @@ class SATARewardsCfg:
         weight=-0.05,
     )
 
+    wheel_vel = RewTerm(
+        func=sata_rew.sata_wheel_vel_penalty,
+        weight=-0.01,
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=".*_foot_joint", preserve_order=True)},
+    )
+
     dof_acc = RewTerm(
         func=isaaclab_mdp.joint_acc_l2,
         weight=-1e-6,
         params={"asset_cfg": SceneEntityCfg("robot", joint_names=".*")},
+    )
+
+    pitch = RewTerm(
+        func=sata_rew.sata_pitch,
+        weight=-5.0,
+        params={"asset_cfg": SceneEntityCfg("robot")},
     )
 
     roll = RewTerm(
