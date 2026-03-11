@@ -249,8 +249,8 @@ class SATATorqueAction(ActionTerm):
         else:
             self.motor_fatigue.zero_()
 
-        # Store processed actions (final torques)
-        self._processed_actions = torques
+        # Store processed actions
+        self._processed_actions[:] = torques
 
         # Apply torques to the asset
         self._asset.set_joint_effort_target(torques, joint_ids=self._joint_ids)
@@ -262,6 +262,9 @@ class SATATorqueAction(ActionTerm):
 
         self._raw_actions[env_ids] = 0.0
         self.activation_sign[env_ids] = 0.0
+
+        if self._prev_policy_obs is not None:
+            self._prev_policy_obs[env_ids] = 0.0
 
         # Reset fatigue with small random initial values scaled by growth
         if self.cfg.motor_fatigue_enabled and self._growth_scale > 0:

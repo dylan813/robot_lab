@@ -248,7 +248,7 @@ class SATAObservationsCfg:
         )
         motor_fatigue = ObsTerm(
             func=sata_obs.sata_motor_fatigue,
-            noise=Unoise(n_min=-0.075, n_max=0.075),
+            noise=Unoise(n_min=-0.75, n_max=0.75),
             clip=(-100.0, 100.0),
             scale=1.0,
         )

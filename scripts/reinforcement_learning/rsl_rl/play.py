@@ -178,23 +178,30 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     if isinstance(env.unwrapped, DirectMARLEnv):
         env = multi_agent_to_single_agent(env)
 
-    # fast-forward SATA growth for play (otherwise torques are near zero)
+    # Set SATA growth to match training-end scale
     try:
+        import math
         _sata = env.unwrapped.action_manager.get_term("sata_torque")
-        # Fast-forward Gompertz growth to maturity
-        _sata._physics_step_counter = int(_sata.cfg.growth_x0 + 5.0 / _sata.cfg.growth_k)
-        _sata._growth_scale = 1.0
-        env.unwrapped._sata_growth_scale = 1.0
-        # Pre-set torque scales to max (avoid initial 30% limit)
-        _sata.current_torque_scale = _sata.cfg.max_torque_scale
-        _sata.rear_torque_scale = _sata.cfg.max_rear_torque_scale
+        _sata._physics_step_counter = agent_cfg.num_steps_per_env * agent_cfg.max_iterations
+        _sata._growth_scale = math.exp(
+            -math.exp(-_sata.cfg.growth_k * (_sata._physics_step_counter - _sata.cfg.growth_x0))
+        )
+        env.unwrapped._sata_growth_scale = _sata._growth_scale
+        _sata.current_torque_scale = (
+            _sata._growth_scale * (_sata.cfg.max_torque_scale - _sata.cfg.initial_torque_scale)
+            + _sata.cfg.initial_torque_scale
+        )
+        _sata.rear_torque_scale = (
+            _sata._growth_scale * (_sata.cfg.max_rear_torque_scale - _sata.cfg.initial_rear_torque_scale)
+            + _sata.cfg.initial_rear_torque_scale
+        )
         # Disable training-time randomisation
         _sata.cfg.action_loss_rate = 0.0
         _sata._obs_dropout_installed = True  # prevent monkey-patching obs manager
         # Disable motor fatigue accumulation
         _sata.cfg.motor_fatigue_enabled = False
         _sata.motor_fatigue.zero_()
-        # Expand command ranges to full growth values
+        # Expand command ranges to training-end growth values
         try:
             _cmd = env.unwrapped.command_manager.get_term("base_velocity")
             _cmd.cfg.ranges.lin_vel_x = _sata.cfg.vel_x_range
@@ -202,6 +209,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
             _cmd.cfg.ranges.ang_vel_z = _sata.cfg.ang_vel_z_range
         except Exception:
             pass
+        print(f"[INFO] SATA growth: step={_sata._physics_step_counter}, "
+              f"growth={_sata._growth_scale:.4f}, torque_scale={_sata.current_torque_scale:.4f}")
     except Exception:
         pass
 
