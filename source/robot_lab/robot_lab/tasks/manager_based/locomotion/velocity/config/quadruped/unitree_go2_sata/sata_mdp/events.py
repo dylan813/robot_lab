@@ -59,7 +59,7 @@ def sata_dof_pos_termination(
     joint_pos = asset.data.joint_pos[:, asset_cfg.joint_ids]
 
     # Hard limits from the URDF
-    pos_limits = asset.data.joint_limits[:, asset_cfg.joint_ids]
+    pos_limits = asset.data.joint_pos_limits[:, asset_cfg.joint_ids]
     lower = pos_limits[:, :, 0] - margin
     upper = pos_limits[:, :, 1] + margin
 
