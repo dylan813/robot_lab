@@ -134,34 +134,6 @@ def sata_motor_fatigue_penalty(env: ManagerBasedRLEnv) -> torch.Tensor:
     return torch.sum(action_term.motor_fatigue * torch.abs(action_term.torques_action), dim=1)
 
 
-def sata_wheel_vel_penalty(
-    env: ManagerBasedRLEnv,
-    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
-) -> torch.Tensor:
-    """Penalize excessive wheel speeds via instantaneous squared velocity.
-
-    Physically motivated replacement for the fatigue-based wheel regularization:
-    penalizes current wheel speed directly rather than accumulated torque history.
-    Consistent with wheeled-legged RL literature (ANYmal-Wheels, Go2W recovery).
-    """
-    asset = env.scene[asset_cfg.name]
-    wheel_vel = asset.data.joint_vel[:, asset_cfg.joint_ids]
-    return torch.sum(wheel_vel**2, dim=1)
-
-
-def sata_pitch(
-    env: ManagerBasedRLEnv,
-    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
-) -> torch.Tensor:
-    """Penalize body pitch via the x-component of projected gravity.
-
-    Especially relevant for wheeled locomotion where forward/backward tipping
-    during acceleration and braking is a primary failure mode.
-    """
-    asset: RigidObject = env.scene[asset_cfg.name]
-    return torch.abs(asset.data.projected_gravity_b[:, 0])
-
-
 def sata_roll(
     env: ManagerBasedRLEnv,
     asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
@@ -171,13 +143,3 @@ def sata_roll(
     return torch.abs(asset.data.projected_gravity_b[:, 1])
 
 
-def sata_leg_activity(
-    env: ManagerBasedRLEnv,
-    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
-) -> torch.Tensor:
-    """Reward non-zero leg joint velocity to discourage wheel-only locomotion."""
-    asset = env.scene[asset_cfg.name]
-    growth = getattr(env, "_sata_growth_scale", 0.0)
-    leg_vel = asset.data.joint_vel[:, asset_cfg.joint_ids]
-    activity = 1.0 - torch.exp(-torch.sum(leg_vel**2, dim=1))
-    return activity * growth

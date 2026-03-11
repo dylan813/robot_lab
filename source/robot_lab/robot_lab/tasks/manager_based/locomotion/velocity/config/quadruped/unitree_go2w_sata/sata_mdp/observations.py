@@ -38,24 +38,9 @@ def sata_scaled_commands(env: ManagerBasedRLEnv, command_name: str) -> torch.Ten
 
 
 def sata_motor_fatigue(env: ManagerBasedRLEnv) -> torch.Tensor:
-    """Returns per-joint motor state: fatigue for leg joints, normalized power for wheel joints.
-
-    Leg joints: leaky-integral of |torque| * dt (fatigue proxy).
-    Wheel joints: |T * omega| / (T_max * omega_max) — instantaneous normalized power,
-    replacing the previously dead zero slots caused by wheel fatigue masking.
+    """Returns per-joint motor fatigue state.
 
     Shape: (num_envs, num_joints)
     """
     action_term = env.action_manager.get_term("sata_torque")
-    state = action_term.motor_fatigue.detach().clone()
-
-    # Fill wheel slots with normalized instantaneous power: |T * omega| / (T_max * omega_max)
-    torques = action_term.processed_actions
-    joint_vel = action_term._asset.data.joint_vel[:, action_term._joint_ids]
-    wheel_mask = action_term._wheel_joint_mask
-    power_norm = (action_term.base_torque_limits[wheel_mask] * action_term.vel_limits[wheel_mask])
-    state[:, wheel_mask] = (
-        torch.abs(torques[:, wheel_mask] * joint_vel[:, wheel_mask]) / power_norm
-    )
-
-    return state
+    return action_term.motor_fatigue.detach().clone()
