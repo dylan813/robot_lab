@@ -481,6 +481,12 @@ class SATARewardsCfg:
         weight=-5.0,
     )
 
+    joint_deviation = RewTerm(
+        func=isaaclab_mdp.joint_deviation_l1,
+        weight=-0.2,
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=[".*_hip_joint", ".*_thigh_joint", ".*_calf_joint"])},
+    )
+
 
 
 @configclass

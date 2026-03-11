@@ -42,9 +42,9 @@ def sata_head_height(
     sensor_cfg: SceneEntityCfg,
     asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
 ) -> torch.Tensor:
-    """Head height reward: base height (terrain-relative) plus upright penalty.
+    """Terrain-relative base height reward, scaled by growth.
 
-    Encourages the robot to stand tall and keep its head upright.
+    Encourages the robot to maintain target stand height.
     The reward grows with the Gompertz growth scale.
     """
     asset: RigidObject = env.scene[asset_cfg.name]
@@ -62,12 +62,7 @@ def sata_head_height(
             dim=1,
         ).clamp(max=base_height_target)
 
-    # Head-up penalty based on forward component of projected gravity
-    gravity_x = asset.data.projected_gravity_b[:, 0]
-    clip_min = min(0.0, -0.2 * (1.5 - growth * 2.0))
-    head_up = -gravity_x.clamp(min=clip_min)
-
-    return base_height * (1.0 + growth) + head_up
+    return base_height * (1.0 + growth)
 
 
 def sata_moving_y(
