@@ -268,11 +268,25 @@ UNITREE_GO2W_SATA_CFG = ArticulationCfg(
     ),
     soft_joint_pos_limit_factor=0.9,
     actuators={
-        # Direct torque control for all joints (legs + wheels) with zero stiffness/damping.
-        "all": ImplicitActuatorCfg(
-            joint_names_expr=[".*"],
-            effort_limit=23.5,
-            velocity_limit=30.0,
+        # Direct torque control with zero stiffness/damping; limits match go2w_torque.urdf
+        "hip_thigh": ImplicitActuatorCfg(
+            joint_names_expr=[".*_hip_joint", ".*_thigh_joint"],
+            effort_limit=23.7,
+            velocity_limit=30.1,
+            stiffness=0.0,
+            damping=0.0,
+        ),
+        "calf": ImplicitActuatorCfg(
+            joint_names_expr=[".*_calf_joint"],
+            effort_limit=35.55,
+            velocity_limit=20.07,
+            stiffness=0.0,
+            damping=0.0,
+        ),
+        "wheel": ImplicitActuatorCfg(
+            joint_names_expr=[".*_foot_joint"],
+            effort_limit=23.7,
+            velocity_limit=30.1,
             stiffness=0.0,
             damping=0.0,
         ),

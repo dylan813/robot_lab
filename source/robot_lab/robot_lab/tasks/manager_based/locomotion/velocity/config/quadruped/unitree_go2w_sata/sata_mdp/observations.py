@@ -53,8 +53,9 @@ def sata_motor_fatigue(env: ManagerBasedRLEnv) -> torch.Tensor:
     torques = action_term.processed_actions
     joint_vel = action_term._asset.data.joint_vel[:, action_term._joint_ids]
     wheel_mask = action_term._wheel_joint_mask
+    power_norm = (action_term.base_torque_limits[wheel_mask] * action_term.vel_limits[wheel_mask])
     state[:, wheel_mask] = (
-        torch.abs(torques[:, wheel_mask] * joint_vel[:, wheel_mask]) / (23.5 * 30.1)
+        torch.abs(torques[:, wheel_mask] * joint_vel[:, wheel_mask]) / power_norm
     )
 
     return state

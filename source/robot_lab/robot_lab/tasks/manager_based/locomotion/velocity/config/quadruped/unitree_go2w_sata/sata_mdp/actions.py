@@ -60,13 +60,12 @@ class SATATorqueAction(ActionTerm):
         self.activation_sign = torch.zeros(self.num_envs, self._num_joints, device=self.device)
         self.motor_fatigue = torch.zeros(self.num_envs, self._num_joints, device=self.device)
 
-        # Torque limits: flat 23.5 for all joints
-        self.base_torque_limits = torch.ones(self._num_joints, device=self.device) * 23.5
-
-        # Velocity limits: per-joint from URDF (hip/thigh=30.1, calf=20.07, foot=30.1)
+        # Torque and velocity limits per-joint, matching go2w_torque.urdf
+        self.base_torque_limits = torch.ones(self._num_joints, device=self.device) * 23.7
         self.vel_limits = torch.ones(self._num_joints, device=self.device) * 30.1
         for i, name in enumerate(self._joint_names):
             if "calf" in name:
+                self.base_torque_limits[i] = 35.55
                 self.vel_limits[i] = 20.07
 
         # Growth state

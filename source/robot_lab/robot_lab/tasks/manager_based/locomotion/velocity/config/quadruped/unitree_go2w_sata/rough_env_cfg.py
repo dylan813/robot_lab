@@ -493,6 +493,12 @@ class SATARewardsCfg:
         weight=-5.0,
     )
 
+    leg_activity = RewTerm(
+        func=sata_rew.sata_leg_activity,
+        weight=2.0,
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=".*_(hip|thigh|calf)_joint", preserve_order=True)},
+    )
+
 
 @configclass
 class SATATerminationsCfg:

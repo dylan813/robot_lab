@@ -169,3 +169,15 @@ def sata_roll(
     """Penalize body roll via the y-component of projected gravity."""
     asset: RigidObject = env.scene[asset_cfg.name]
     return torch.abs(asset.data.projected_gravity_b[:, 1])
+
+
+def sata_leg_activity(
+    env: ManagerBasedRLEnv,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    """Reward non-zero leg joint velocity to discourage wheel-only locomotion."""
+    asset = env.scene[asset_cfg.name]
+    growth = getattr(env, "_sata_growth_scale", 0.0)
+    leg_vel = asset.data.joint_vel[:, asset_cfg.joint_ids]
+    activity = 1.0 - torch.exp(-torch.sum(leg_vel**2, dim=1))
+    return activity * growth
