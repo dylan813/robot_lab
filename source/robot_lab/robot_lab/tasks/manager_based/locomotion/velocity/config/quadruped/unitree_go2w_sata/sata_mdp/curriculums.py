@@ -1,4 +1,4 @@
-"""Curriculum terms for SATA fine-tuning (braking and drop recovery)."""
+"""Curriculum terms for SATA fine-tuning (braking, drop recovery, and step-drop)."""
 
 from __future__ import annotations
 
@@ -174,6 +174,135 @@ class DropHeightCurriculum(ManagerTermBase):
         if stage["max_steps"] > 0 and steps_in_stage >= stage["max_steps"]:
             print(f"[DropCurriculum] Stage {self._stage} max_steps reached — advancing.")
             return True
+
+        perf = self._mean_episode_length(env)
+        self._perf_window.append(perf)
+        if len(self._perf_window) < self.WINDOW_SIZE:
+            return False
+        return (sum(self._perf_window) / len(self._perf_window)) > self.SURVIVE_THRESHOLD
+
+    # ------------------------------------------------------------------
+    # Curriculum term entrypoint
+    # ------------------------------------------------------------------
+
+    def __call__(self, env: ManagerBasedRLEnv, env_ids: Sequence[int]) -> float:
+        if self._should_advance(env):
+            self._stage += 1
+            self._stage_start_step = env.common_step_counter
+            self._perf_window.clear()
+            self._apply_stage(env, self._stage)
+
+        return float(self._stage)
+
+
+class StepDropCurriculum(ManagerTermBase):
+    """Performance-based curriculum for step-drop (drive-off-ledge) fine-tuning.
+
+    The robot spawns on the back of a physical block, walks forward, and drives
+    off the front edge. Each stage raises the block height and increases the
+    forward speed range, so the robot must launch faster as the drop gets taller.
+
+    The block is a kinematic rigid body in the scene ("platform"). Its Z position
+    is updated each stage so the top surface sits at the target height.
+
+    Block geometry (set in step_drop_train_env_cfg.py):
+        length=3.0 m, width=2.0 m, height=1.0 m
+        front edge at x=0 (env local), center at x=-1.5
+
+    Robot spawns at x=-2.5 (2.5 m from edge) with zero velocity — settles
+    on the block then walks toward the edge under the velocity command.
+
+    Stages:
+        0 - low    : block top=0.3 m, vx=(0.5, 1.0) m/s.
+        1 - target : block top=0.5 m, vx=(0.8, 1.5) m/s. Final stage.
+    """
+
+    # Block geometry constants — must match step_drop_train_env_cfg.py
+    BLOCK_LENGTH = 3.0
+    BLOCK_HALF_HEIGHT = 0.5   # block is 1.0 m tall
+    SPAWN_X_OFFSET = -2.5     # robot x relative to env origin (2.5 m from front edge)
+    SPAWN_Z_CLEARANCE = 0.05  # small gap above block surface so robot settles gently
+
+    # ~500 RL iterations per stage (500 * 24 steps = 12 000 common_step_counter increments).
+    # Final stage gets the remainder of the 3000-iteration budget.
+    STAGES = [
+        {"height": 0.3, "vx": (0.5, 1.0), "max_steps": 12000, "label": "low"},
+        {"height": 0.5, "vx": (0.8, 1.5), "max_steps": 0,     "label": "target"},
+    ]
+
+    # Performance gate: robot must survive an average of SURVIVE_THRESHOLD steps
+    # to advance early. Max episode = 15 s × 200 Hz = 3000 steps.
+    # At vx=1.0 m/s, reaching the edge takes ~250 steps. Threshold of 700 means
+    # the robot must reliably land AND continue walking for ~4.5 s after the edge.
+    # MIN_STAGE_STEPS prevents the gate from firing before 250 RL iterations
+    # (250 * 24 = 6000) — avoids the base policy instantly blasting through stages.
+    WINDOW_SIZE = 50
+    SURVIVE_THRESHOLD = 700.0
+    MIN_STAGE_STEPS = 6000
+
+    def __init__(self, cfg: CurriculumTermCfg, env: ManagerBasedRLEnv):
+        super().__init__(cfg, env)
+        self._stage = 0
+        self._stage_start_step = 0
+        self._perf_window: deque[float] = deque(maxlen=self.WINDOW_SIZE)
+        self._apply_stage(env, 0)
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _apply_stage(self, env: ManagerBasedRLEnv, stage_idx: int):
+        import torch
+        stage = self.STAGES[stage_idx]
+        height = stage["height"]
+        z_offset = height + self.SPAWN_Z_CLEARANCE  # robot COM = 0.45 + z_offset
+
+        # Move kinematic block so its top surface is at stage height.
+        # Block center z = height - half_height (may be negative = partially underground).
+        try:
+            platform = env.scene["platform"]
+            root_state = platform.data.root_state_w.clone()
+            root_state[:, 2] = height - self.BLOCK_HALF_HEIGHT
+            platform.write_root_state_to_sim(root_state)
+        except Exception as e:
+            print(f"[StepDropCurriculum] WARNING: Could not move platform: {e}")
+
+        # Update robot spawn height to match new block top surface.
+        try:
+            event_term = env.event_manager.get_term("randomize_reset_base")
+            event_term.cfg.params["pose_range"]["z"] = (z_offset, z_offset)
+        except Exception as e:
+            print(f"[StepDropCurriculum] WARNING: Could not set spawn z: {e}")
+
+        # Update velocity command range — faster at higher stages.
+        try:
+            cmd_term = env.command_manager.get_term("base_velocity")
+            cmd_term.cfg.ranges.lin_vel_x = stage["vx"]
+        except Exception as e:
+            print(f"[StepDropCurriculum] WARNING: Could not set command range: {e}")
+
+        print(
+            f"[StepDropCurriculum] --> Stage {stage_idx} '{stage['label']}': "
+            f"block_top={height:.1f} m, vx={stage['vx']} m/s"
+        )
+
+    def _mean_episode_length(self, env: ManagerBasedRLEnv) -> float:
+        return env.episode_length_buf.float().mean().item()
+
+    def _should_advance(self, env: ManagerBasedRLEnv) -> bool:
+        if self._stage >= len(self.STAGES) - 1:
+            return False
+
+        stage = self.STAGES[self._stage]
+        steps_in_stage = env.common_step_counter - self._stage_start_step
+
+        if stage["max_steps"] > 0 and steps_in_stage >= stage["max_steps"]:
+            print(f"[StepDropCurriculum] Stage {self._stage} max_steps reached — advancing.")
+            return True
+
+        # Performance gate disabled until minimum stage duration has elapsed.
+        if steps_in_stage < self.MIN_STAGE_STEPS:
+            return False
 
         perf = self._mean_episode_length(env)
         self._perf_window.append(perf)

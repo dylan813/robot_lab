@@ -37,6 +37,16 @@ gym.register(
 )
 
 gym.register(
+    id="RobotLab-Isaac-StepDrop-Train-Unitree-Go2W-SATA-v0",
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": f"{__name__}.step_drop_train_env_cfg:UnitreeGo2WSATAStepDropTrainEnvCfg",
+        "rsl_rl_cfg_entry_point": f"{agents.__name__}.step_drop_train_ppo_cfg:UnitreeGo2WSATAStepDropPPORunnerCfg",
+    },
+)
+
+gym.register(
     id="RobotLab-Isaac-AccelBrake-Unitree-Go2W-SATA-v0",
     entry_point="isaaclab.envs:ManagerBasedRLEnv",
     disable_env_checker=True,
