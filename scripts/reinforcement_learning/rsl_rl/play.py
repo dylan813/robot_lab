@@ -182,7 +182,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     try:
         import math
         _sata = env.unwrapped.action_manager.get_term("sata_torque")
-        _sata._physics_step_counter = agent_cfg.num_steps_per_env * agent_cfg.max_iterations
+        _sata._physics_step_counter = _sata.cfg.growth_initial_steps + agent_cfg.num_steps_per_env * agent_cfg.max_iterations
         _sata._growth_scale = math.exp(
             -math.exp(-_sata.cfg.growth_k * (_sata._physics_step_counter - _sata.cfg.growth_x0))
         )

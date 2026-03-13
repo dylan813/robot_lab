@@ -70,7 +70,7 @@ class SATATorqueAction(ActionTerm):
 
         # Growth state
         self._growth_scale: float = 0.0
-        self._physics_step_counter: int = 0
+        self._physics_step_counter: int = self.cfg.growth_initial_steps
         self.current_torque_scale: float = self.cfg.initial_torque_scale
         self.rear_torque_scale: float = self.cfg.initial_rear_torque_scale
 
@@ -149,8 +149,9 @@ class SATATorqueAction(ActionTerm):
         Called every simulation substep. Growth is computed here to match
         the original SATA where the step counter increments per sim substep.
         """
-        # Update physics step counter and growth (always, matching original)
-        self._physics_step_counter += 1
+        # Update physics step counter and growth
+        if not self.cfg.freeze_growth:
+            self._physics_step_counter += 1
         self._substep_idx += 1
         self._growth_scale = math.exp(
             -math.exp(-self.cfg.growth_k * (self._physics_step_counter - self.cfg.growth_x0))
@@ -182,27 +183,28 @@ class SATATorqueAction(ActionTerm):
             + self.cfg.initial_rear_torque_scale
         )
 
-        # Update command ranges based on growth
-        try:
-            cmd_term = self._env.command_manager.get_term("base_velocity")
-            ranges = cmd_term.cfg.ranges
+        # Update command ranges based on growth (disabled when curriculum handles it)
+        if self.cfg.scale_command_ranges:
+            try:
+                cmd_term = self._env.command_manager.get_term("base_velocity")
+                ranges = cmd_term.cfg.ranges
 
-            x_sum = self.cfg.vel_x_range[1] + self.cfg.vel_x_range[0]
-            x_diff = self.cfg.vel_x_range[1] - self.cfg.vel_x_range[0]
-            ranges.lin_vel_x = (
-                max(x_sum * 0.5 - x_diff * self._growth_scale, self.cfg.vel_x_range[0]),
-                min(x_sum * 0.5 + x_diff * self._growth_scale, self.cfg.vel_x_range[1]),
-            )
-            ranges.lin_vel_y = (
-                self.cfg.vel_y_range[0] * self._growth_scale,
-                self.cfg.vel_y_range[1] * self._growth_scale,
-            )
-            ranges.ang_vel_z = (
-                self.cfg.ang_vel_z_range[0] * self._growth_scale,
-                self.cfg.ang_vel_z_range[1] * self._growth_scale,
-            )
-        except Exception:
-            pass  # Command manager may not be ready during init
+                x_sum = self.cfg.vel_x_range[1] + self.cfg.vel_x_range[0]
+                x_diff = self.cfg.vel_x_range[1] - self.cfg.vel_x_range[0]
+                ranges.lin_vel_x = (
+                    max(x_sum * 0.5 - x_diff * self._growth_scale, self.cfg.vel_x_range[0]),
+                    min(x_sum * 0.5 + x_diff * self._growth_scale, self.cfg.vel_x_range[1]),
+                )
+                ranges.lin_vel_y = (
+                    self.cfg.vel_y_range[0] * self._growth_scale,
+                    self.cfg.vel_y_range[1] * self._growth_scale,
+                )
+                ranges.ang_vel_z = (
+                    self.cfg.ang_vel_z_range[0] * self._growth_scale,
+                    self.cfg.ang_vel_z_range[1] * self._growth_scale,
+                )
+            except Exception:
+                pass  # Command manager may not be ready during init
 
         # Step 1: Scale raw actions
         self.torques_action = self._raw_actions * self.cfg.action_scale
@@ -298,6 +300,8 @@ class SATATorqueActionCfg(ActionTermCfg):
     # Growth parameters (Gompertz curve)
     growth_k: float = 0.00003
     growth_x0: float = 24000.0
+    growth_initial_steps: int = 0  # Set to checkpoint step count for fine-tuning
+    freeze_growth: bool = False     # If True, counter never advances (fixed growth scale)
     initial_torque_scale: float = 0.3
     max_torque_scale: float = 1.0
     initial_rear_torque_scale: float = 1.0
@@ -311,6 +315,7 @@ class SATATorqueActionCfg(ActionTermCfg):
     action_loss_rate: float = 0.1
 
     # Command range parameters (for growth-based scaling)
+    scale_command_ranges: bool = True  # Set False when a curriculum manages command ranges
     vel_x_range: tuple[float, float] = (-0.5, 1.5)
     vel_y_range: tuple[float, float] = (-0.5, 0.5)
     ang_vel_z_range: tuple[float, float] = (-1.5, 1.5)
