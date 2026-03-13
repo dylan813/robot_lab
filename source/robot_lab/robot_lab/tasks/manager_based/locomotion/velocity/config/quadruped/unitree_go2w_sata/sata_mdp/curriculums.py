@@ -1,4 +1,4 @@
-"""Curriculum terms for SATA braking fine-tuning."""
+"""Curriculum terms for SATA fine-tuning (braking and drop recovery)."""
 
 from __future__ import annotations
 
@@ -90,6 +90,96 @@ class BrakingVelocityCurriculum(ManagerTermBase):
         if len(self._perf_window) < self.WINDOW_SIZE:
             return False
         return (sum(self._perf_window) / len(self._perf_window)) > self.WALK_THRESHOLD
+
+    # ------------------------------------------------------------------
+    # Curriculum term entrypoint
+    # ------------------------------------------------------------------
+
+    def __call__(self, env: ManagerBasedRLEnv, env_ids: Sequence[int]) -> float:
+        if self._should_advance(env):
+            self._stage += 1
+            self._stage_start_step = env.common_step_counter
+            self._perf_window.clear()
+            self._apply_stage(env, self._stage)
+
+        return float(self._stage)
+
+
+class DropHeightCurriculum(ManagerTermBase):
+    """Performance-based curriculum for drop recovery fine-tuning.
+
+    Gradually increases the drop height as the robot demonstrates it can
+    survive at the current height. Advancement is gated on mean episode
+    length (a proxy for survival rate) over a rolling window.
+
+    Stages:
+        0 - Low  : drop from 0.5 m. Advance when mean episode length > threshold.
+        1 - Mid  : drop from 0.8 m. Advance when mean episode length > threshold.
+        2 - High : drop from 1.2 m. Advance when mean episode length > threshold.
+        3 - Max  : drop from 1.5 m. Final stage.
+    """
+
+    _DEFAULT_SPAWN_Z = 0.45  # robot's default z in UNITREE_GO2W_SATA_CFG
+
+    # 3000 iter budget: ~750 iter per stage (18k steps), max stage gets remainder.
+    # At 24 steps/iter: 18k steps = 750 iter.
+    STAGES = [
+        {"height": 0.5, "max_steps": 18000, "label": "low"},
+        {"height": 0.8, "max_steps": 18000, "label": "mid"},
+        {"height": 1.2, "max_steps": 18000, "label": "high"},
+        {"height": 1.5, "max_steps": 0,     "label": "max"},
+    ]
+
+    # Advance early if mean episode length stays above this for WINDOW_SIZE calls.
+    # At episode_length_s=8s / dt=0.01 → max 800 steps. Threshold of 150 means
+    # the robot is surviving ~1.5 s on average before failing.
+    WINDOW_SIZE = 50
+    SURVIVE_THRESHOLD = 150.0
+
+    def __init__(self, cfg: CurriculumTermCfg, env: ManagerBasedRLEnv):
+        super().__init__(cfg, env)
+        self._stage = 0
+        self._stage_start_step = 0
+        self._perf_window: deque[float] = deque(maxlen=self.WINDOW_SIZE)
+        self._apply_stage(env, 0)
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _apply_stage(self, env: ManagerBasedRLEnv, stage_idx: int):
+        stage = self.STAGES[stage_idx]
+        z_offset = stage["height"] - self._DEFAULT_SPAWN_Z
+        try:
+            event_term = env.event_manager.get_term("randomize_reset_base")
+            event_term.cfg.params["pose_range"]["z"] = (z_offset, z_offset)
+        except Exception as e:
+            print(f"[DropCurriculum] WARNING: Could not set drop height: {e}")
+        print(
+            f"[DropCurriculum] --> Stage {stage_idx} '{stage['label']}': "
+            f"drop_height={stage['height']:.1f} m (z_offset={z_offset:+.2f})"
+        )
+
+    def _mean_episode_length(self, env: ManagerBasedRLEnv) -> float:
+        """Mean episode length across all envs — proxy for survival rate."""
+        return env.episode_length_buf.float().mean().item()
+
+    def _should_advance(self, env: ManagerBasedRLEnv) -> bool:
+        if self._stage >= len(self.STAGES) - 1:
+            return False
+
+        stage = self.STAGES[self._stage]
+        steps_in_stage = env.common_step_counter - self._stage_start_step
+
+        if stage["max_steps"] > 0 and steps_in_stage >= stage["max_steps"]:
+            print(f"[DropCurriculum] Stage {self._stage} max_steps reached — advancing.")
+            return True
+
+        perf = self._mean_episode_length(env)
+        self._perf_window.append(perf)
+        if len(self._perf_window) < self.WINDOW_SIZE:
+            return False
+        return (sum(self._perf_window) / len(self._perf_window)) > self.SURVIVE_THRESHOLD
 
     # ------------------------------------------------------------------
     # Curriculum term entrypoint
